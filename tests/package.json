@@ -1,0 +1,1 @@
+{ "name": "liste-cadeau-tests", "private": true, "scripts": { "test": "node v1-sauvegarde.test.js" }, "devDependencies": { "jsdom": "^24.0.0" } }
