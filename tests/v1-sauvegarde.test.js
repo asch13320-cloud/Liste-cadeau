@@ -47,4 +47,28 @@ t('ancien format partiel ne plante pas',w.document.querySelector('#app .stats')&
 // 9. quota plein : message visible
 d=boot({noel2026:JSON.stringify(seed)},{full:true});w=d.window;
 t('save() retourne false',w.eval('save()')===false);t('toast d’alerte affiché',w.document.querySelector('#toast.on')&&/pleine/.test(w.document.querySelector('#toast').textContent));
-console.log(`\n${ok} ok, ${ko} échecs`);process.exit(ko?1:0);
+
+// ---- Export robuste (cas Android : partage refusé) ----
+function bootNav(nav){const d=boot({noel2026:JSON.stringify(seed)});const w=d.window;
+ w.URL.createObjectURL=()=>'blob:x';w.URL.revokeObjectURL=()=>{};
+ for(const[k,v]of Object.entries(nav))Object.defineProperty(w.navigator,k,{value:v,configurable:true});
+ let clicked=0;w.HTMLAnchorElement.prototype.click=function(){clicked++;this._dl=this.download};w.__clicks=()=>clicked;return w}
+(async()=>{
+ let w=bootNav({canShare:()=>false});await w.eval('exportData()');
+ t('canShare=false → téléchargement',w.__clicks()===1&&/téléchargée/.test(w.document.querySelector('#toast').textContent));
+ w=bootNav({canShare:()=>true,share:()=>Promise.reject(Object.assign(new Error('x'),{name:'NotAllowedError'}))});await w.eval('exportData()');
+ t('partage refusé → repli téléchargement',w.__clicks()===1&&/téléchargée/.test(w.document.querySelector('#toast').textContent));
+ w=bootNav({canShare:()=>true,share:()=>Promise.reject(Object.assign(new Error('x'),{name:'AbortError'}))});await w.eval('exportData()');
+ t('partage annulé → rien, pas d’erreur',w.__clicks()===0&&!w.document.querySelector('#toast.on'));
+ w=bootNav({canShare:()=>true,share:()=>Promise.resolve()});await w.eval('exportData()');
+ t('partage réussi',w.__clicks()===0&&/partagée/.test(w.document.querySelector('#toast').textContent)&&w.localStorage.getItem('noel2026_lastexport'));
+ let copied='';w=bootNav({clipboard:{writeText:x=>{copied=x;return Promise.resolve()}}});await w.eval('copyData()');
+ t('copie dans le presse-papiers',JSON.parse(copied).data.wishes.length===1);
+ w=bootNav({clipboard:{writeText:()=>Promise.reject(new Error('refusé'))}});await w.eval('copyData()');
+ t('presse-papiers refusé → zone de texte',w.document.querySelector('#dlg textarea')&&JSON.parse(w.document.querySelector('#dlg textarea').value).data.people.length===1);
+ w=bootNav({});w.eval('pasteRestore()');w.document.querySelector('#tx').value='nimporte quoi';w.document.querySelector('#txok').click();
+ t('texte collé invalide → message dans la fenêtre',/pas une sauvegarde/.test(w.document.querySelector('#txerr').textContent));
+ w.document.querySelector('#tx').value=JSON.stringify(w.eval('snapshot()'));w.document.querySelector('#txok').click();
+ t('texte collé valide → demande de confirmation',/Restaurer cette sauvegarde/.test(w.document.querySelector('#dlg').textContent));
+ console.log(`\n${ok} ok, ${ko} échecs`);process.exit(ko?1:0);
+})();

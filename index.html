@@ -217,7 +217,7 @@ const price=t=>{const m=t.match(/(\d+[.,]?\d*)\s*€/);return m?+m[1].replace(',
 const clean=t=>t.replace(/[—–-]?\s*\d+[.,]?\d*\s*€/,'').trim()||t;
 
 const A={
- tab:id=>{T=id;P=null},export:()=>{exportData()},import:()=>{$('#imp').click()},wf:id=>{F=id},back:()=>{P=null},popen:id=>{T='people';P=id},
+ tab:id=>{T=id;P=null},export:()=>{exportData()},copy:()=>{copyData()},import:()=>{$('#imp').click()},pastetxt:()=>{pasteRestore()},wf:id=>{F=id},back:()=>{P=null},popen:id=>{T='people';P=id},
  wadd:()=>wForm(),wedit:id=>wForm(fw(id)),
  wdel:id=>ask(()=>{S.wishes=S.wishes.filter(w=>w.id!==id)}),
  wfav:id=>{const w=fw(id);w.fav=!w.fav},
@@ -236,15 +236,38 @@ const A={
 };
 const lastExport=()=>{try{const d=localStorage.getItem(K+'_lastexport');return d?'Dernière sauvegarde : '+new Date(d).toLocaleDateString('fr-FR'):'Aucune sauvegarde pour l’instant'}catch(e){return ''}};
 const snapshot=()=>({app:'liste-cadeau',version:1,exportedAt:new Date().toISOString(),data:S});
+const stamp=()=>{try{localStorage.setItem(K+'_lastexport',new Date().toISOString())}catch(e){}};
 async function exportData(){
  const json=JSON.stringify(snapshot(),null,2),name='noel2026-sauvegarde-'+new Date().toISOString().slice(0,10)+'.json';
- const file=new File([json],name,{type:'application/json'});
+ let step='préparation';
  try{
-  if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'Sauvegarde Noël 2026'})}
-  else{const a=document.createElement('a');a.href=URL.createObjectURL(file);a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),4000)}
-  try{localStorage.setItem(K+'_lastexport',new Date().toISOString())}catch(e){}
-  toast('✅ Sauvegarde créée : '+name);render();
- }catch(e){if(e&&e.name!=='AbortError')toast('⚠️ L’export a échoué. Réessaie.')}
+  let done=false;
+  if(navigator.canShare&&window.File){
+   try{const file=new File([json],name,{type:'application/json'});
+    if(navigator.canShare({files:[file]})){step='partage';await navigator.share({files:[file],title:'Sauvegarde Noël 2026'});done=true}}
+   catch(e){if(e&&e.name==='AbortError')return}
+  }
+  if(!done){step='téléchargement';const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(a.href)},60000)}
+  stamp();toast(done?'✅ Sauvegarde partagée.':'✅ Sauvegarde téléchargée : cherche « '+name+' » dans tes Téléchargements.');render();
+ }catch(e){toast('⚠️ Export impossible ('+step+' : '+((e&&e.name)||'erreur')+'). Utilise « Copier la sauvegarde » à la place.')}
+}
+function textDialog(title,text,readonly,onOk,okLabel){
+ const d=$('#dlg');
+ d.innerHTML='<h3>'+title+'</h3><p id="txerr" style="color:var(--red);font-size:14px;margin:0 0 8px"></p><textarea id="tx" rows="8" style="width:100%;font:12px monospace"'+(readonly?' readonly':' placeholder="Colle ici le texte de ta sauvegarde"')+'>'+esc(text)+'</textarea><div class="row"><button type="button" class="ghost" data-close>Fermer</button>'+(onOk?'<button type="button" class="pri" id="txok">'+okLabel+'</button>':'')+'</div>';
+ d.showModal();const t=$('#tx');if(readonly){t.focus();t.select()}
+ if(onOk)$('#txok').onclick=()=>onOk(t.value);
+}
+async function copyData(){
+ const json=JSON.stringify(snapshot(),null,2);
+ try{await navigator.clipboard.writeText(json);stamp();toast('✅ Sauvegarde copiée. Colle-la dans une note ou un mail envoyé à toi-même.');render()}
+ catch(e){stamp();textDialog('Copie ce texte 📋',json,true)}
+}
+function pasteRestore(){
+ textDialog('Restaurer depuis un texte',' ',false,v=>{const d=parseBackup(v);if(!d){$('#txerr').textContent='⚠️ Ce texte n’est pas une sauvegarde valide.';return}$('#dlg').close();confirmRestore(d)},'Vérifier');
+}
+function confirmRestore(d){
+ const n=d.people.reduce((s,p)=>s+p.gifts.length,0);
+ pick('Restaurer cette sauvegarde ?<br><small style="font:16px var(--hand);color:var(--muted)">'+d.wishes.length+' envie(s), '+d.people.length+' carnet(s), '+n+' cadeau(x), '+d.inbox.length+' idée(s) en vrac.<br>Tes données actuelles seront remplacées (une copie est gardée).</small>',[{v:1,l:'♻️ Oui, restaurer'}],()=>restoreData(d));
 }
 function parseBackup(txt){
  let o;try{o=JSON.parse(txt)}catch(e){return null}
@@ -262,8 +285,7 @@ $('#imp').addEventListener('change',e=>{
  const f=e.target.files[0];e.target.value='';if(!f)return;
  if(f.size>20*1024*1024){toast('⚠️ Ce fichier est trop gros pour être une sauvegarde.');return}
  const r=new FileReader();r.onload=()=>{const d=parseBackup(r.result);if(!d){toast('⚠️ Ce fichier n’est pas une sauvegarde valide.');return}
-  const n=d.people.reduce((s,p)=>s+p.gifts.length,0);
-  pick('Restaurer cette sauvegarde ?<br><small style="font:16px var(--hand);color:var(--muted)">'+d.wishes.length+' envie(s), '+d.people.length+' carnet(s), '+n+' cadeau(x), '+d.inbox.length+' idée(s) en vrac.<br>Tes données actuelles seront remplacées (une copie est gardée).</small>',[{v:1,l:'♻️ Oui, restaurer'}],()=>restoreData(d))};
+  confirmRestore(d)};
  r.onerror=()=>toast('⚠️ Lecture du fichier impossible.');r.readAsText(f)});
 document.addEventListener('click',e=>{
  if(e.target.closest('[data-close]')){$('#dlg').close();return}
@@ -299,7 +321,7 @@ function home(){const s=stats();
  ${S.wishes.filter(w=>w.fav).length?`<div class="scrap-grid">${S.wishes.filter(w=>w.fav).slice(0,3).map(wCard).join('')}</div>`:`<p class="empty">Ajoute des étoiles à tes envies pour les retrouver ici.</p>`}
  <div class="card"><div class="top"><div><div class="small-label">La hotte en préparation</div><h4>Budget restant</h4></div><strong style="font:700 23px var(--display);color:var(--pine)">${eur(s.rest)}</strong></div><p class="note">Sur ${eur(s.bud)} prévus pour tous les carnets.</p></div>
  <div class="section-head"><h2>Ma sauvegarde 💾</h2><span class="paper-note">${lastExport()}</span></div>
- <div class="card"><p class="note">Tout est enregistré dans ce téléphone uniquement. Fais une sauvegarde de temps en temps : c’est ton filet de sécurité.</p><div class="acts">${btn('export',0,'⬇ Exporter mes données','on')}${btn('import',0,'⬆ Restaurer une sauvegarde')}</div></div>`}
+ <div class="card"><p class="note">Tout est enregistré dans ce téléphone uniquement. Fais une sauvegarde de temps en temps : c’est ton filet de sécurité.</p><div class="acts">${btn('export',0,'⬇ Exporter mes données','on')}${btn('copy',0,'📋 Copier la sauvegarde')}${btn('import',0,'⬆ Restaurer un fichier')}${btn('pastetxt',0,'✎ Restaurer un texte copié')}</div></div>`}
 
 
 function wishes(){const l=S.wishes.filter(w=>F==='Toutes'||w.status===F);
