@@ -324,11 +324,11 @@
     <div class="section-head"><h2>Mon ancienne version 📦</h2></div>
     <div class="card">${n ? `<p class="note">Sur cet appareil : <b>${n.w}</b> ${plural(n.w, 'envie', 'envies')}, <b>${n.p}</b> ${plural(n.p, 'carnet', 'carnets')} (${n.g} ${plural(n.g, 'cadeau', 'cadeaux')}), <b>${n.i}</b> ${plural(n.i, 'idée', 'idées')} en vrac.</p>
       <p class="note"><b>Rien n’est supprimé</b> de cet appareil, même après l’import. Tu peux relancer l’import sans créer de doublons.</p>
-      <div class="acts">${btn('lbackup', 0, '1. ⬇ Sauvegarder (JSON)', S.backupDone ? 'on' : '')}${btn('limport', 0, '2. ⬆ Importer dans mon compte', 'pri')}</div>
-      ${S.backupDone ? '<p class="okmsg">✓ Sauvegarde faite.</p>' : '<p class="note">Fais d’abord la sauvegarde (étape 1).</p>'}
+      <div class="acts">${btn('limport', 0, '⬆ Importer dans mon compte', 'pri')}${btn('lbackup', 0, '⬇ Sauvegarde seule (JSON)')}</div>
+      <p class="note">L’import commence par télécharger une sauvegarde de tes données, puis les copie dans ton compte.</p>
       ${rep ? `<p class="note">Dernier import : ${esc(ISO(rep.at))} — ${esc(rep.summary)}</p>` : ''}` : '<p class="note">Aucune donnée de l’ancienne version sur cet appareil.</p>'}
       <div class="acts"><a class="btnlink" href="local.html">Ouvrir l’ancienne version (sans compte)</a></div></div>
-    <div class="card"><div class="acts">${btn('logout', 0, 'Me déconnecter', 'on')}</div><p class="note">Synchronisation : ${S.offline ? 'hors-ligne' : S.rt ? 'en direct' : 'régulière'} · version 2</p></div>`;
+    <div class="card"><div class="acts">${btn('logout', 0, 'Me déconnecter', 'on')}</div><p class="note">Synchronisation : ${S.offline ? 'hors-ligne' : S.rt ? 'en direct' : 'régulière'} · version 2 (${esc(root.BUILD || '?')})</p></div>`;
   }
 
   // ------------------------------------------------------------------ écrans sans compte
@@ -538,19 +538,34 @@
   }
   const stamp = () => new Date().toISOString().slice(0, 10);
 
+  const importErr = (stage, e) => {
+    console.warn(e);
+    const detail = [`étape : ${stage}`, `message : ${(e && e.message) || e}`, e && e.code ? `code : ${e.code}` : '', e && e.details ? `détails : ${e.details}` : '', e && e.hint ? `indice : ${e.hint}` : '', `build : ${root.BUILD || '?'}`].filter(Boolean).join('\n');
+    modal(`<h3>⚠️ L’import n’a pas abouti</h3><p class="err">${esc(api.friendly(e))}</p><p class="sub">Détail technique (à m’envoyer si besoin) :</p><textarea class="copybox" rows="5" readonly id="errtx">${esc(detail)}</textarea>
+      <p class="note"><b>Tes données locales sont intactes</b> et tu peux réessayer sans risque de doublons.</p><div class="row"><button class="ghost" data-close>Fermer</button><button class="pri" id="errcp">📋 Copier le détail</button></div>`);
+    $('#errcp').onclick = async () => { $('#errcp').textContent = (await copyText(detail)) ? '✓ Copié' : 'Sélectionne le texte'; $('#errtx').select(); };
+  };
+  async function backupLegacy(L) { return downloadJSON('noel2026-sauvegarde-' + stamp() + '.json', { app: 'liste-cadeau', version: 1, exportedAt: new Date().toISOString(), data: L }, 'Sauvegarde'); }
+
   async function runImport() {
     if (!mayWrite()) return;
     const L = legacyData(); if (!L) return toast('Aucune donnée locale à importer.');
-    if (!S.backupDone) return toast('Fais d’abord la sauvegarde (étape 1).');
+    if (!S.backupDone) {
+      const done = await backupLegacy(L);
+      if (done) S.backupDone = true;
+      else if ((await choose('Continuer sans sauvegarde ?', [{ v: 1, l: 'Oui, importer quand même' }], 'Rien n’est supprimé de cet appareil : l’import ne fait que copier tes données dans ton compte.')) !== 1) return;
+    }
+    const prog = (m) => modal('<h3>Import en cours…</h3><p class="sub">' + esc(m) + '</p><p class="note">Ne ferme pas l’application.</p>');
     const payload = JSON.parse(JSON.stringify(L)), photos = {};
-    L.wishes.forEach((w) => { if (w.photo) photos['w:' + w.id] = w.photo; });
-    L.people.forEach((p) => (p.gifts || []).forEach((g) => { if (g.photo) photos[p.id + '|g:' + g.id] = g.photo; }));
-    payload.wishes.forEach((w) => { if (w.photo) w.photo = '1'; });
-    payload.people.forEach((p) => (p.gifts || []).forEach((g) => { if (g.photo) g.photo = '1'; }));
-    modal('<h3>Import en cours…</h3><p class="sub">Ne ferme pas l’application.</p>');
-    let res, up = 0, upFail = 0, upSkip = 0;
+    L.wishes.forEach((w) => { if (w && w.photo) photos['w:' + w.id] = w.photo; });
+    L.people.forEach((p) => (p.gifts || []).forEach((g) => { if (g && g.photo) photos[p.id + '|g:' + g.id] = g.photo; }));
+    payload.wishes.forEach((w) => { if (w && w.photo) w.photo = '1'; });
+    payload.people.forEach((p) => (p.gifts || []).forEach((g) => { if (g && g.photo) g.photo = '1'; }));
+    let res, up = 0, upFail = 0, upSkip = 0, stage = 'envoi des listes';
     try {
+      prog('Envoi de tes listes et cadeaux…');
       res = await api.importLegacy({ wishes: payload.wishes, people: payload.people, inbox: payload.inbox });
+      stage = 'photos'; prog('Envoi des photos…');
       const before = await api.verifyLegacy(), have = {}; before.items.forEach((i) => { have[i.id] = i; });
       const plegacy = {}; before.lists.forEach((l) => { plegacy[l.id] = l.legacy_key; });
       for (const m of res.items) {
@@ -562,23 +577,25 @@
         if (!blob) { upFail++; continue; }
         try { const path = await api.uploadPhoto(m.list_id, m.item_id, blob, true); await api.updateItem({ id: cur.id, version: cur.version }, { photo_path: path }); up++; } catch (e) { console.warn(e); upFail++; }
       }
-    } catch (e) { closeModal(); return fail(e); }
-    // vérification : on compare ce que contient l'ancienne version avec ce qu'il y a maintenant dans le compte
-    const after = await api.verifyLegacy(); await refresh(true);
-    const lk = {}; after.lists.forEach((l) => { lk[l.id] = l.legacy_key; });
-    const server = new Set(after.items.map((i) => (lk[i.list_id] || '') + '|' + i.legacy_key)), inboxSrv = new Set(after.inbox.map((i) => i.legacy_key));
-    const expW = [...new Set(L.wishes.map((w) => 'w:' + w.id))], expG = [...new Set(L.people.flatMap((p) => (p.gifts || []).map((g) => 'p:' + p.id + '|g:' + g.id)))], expI = [...new Set(L.inbox.map((i) => 'i:' + i.id))];
-    const okW = expW.filter((k) => server.has('wishes|' + k)).length, okG = expG.filter((k) => server.has(k)).length, okI = expI.filter((k) => inboxSrv.has(k)).length;
-    const okL = L.people.filter((p) => after.lists.some((l) => l.legacy_key === 'p:' + p.id)).length;
-    const expPhotos = Object.keys(photos).length, okPhotos = after.items.filter((i) => i.photo_path).length;
-    const line = (n, a, b) => `<p class="${a === b ? 'okmsg' : 'err'}">${a === b ? '✓' : '✗'} ${n} : ${a} / ${b}</p>`;
-    const all = okW === expW.length && okG === expG.length && okI === expI.length && okL === L.people.length;
-    const summary = `envies ${okW}/${expW.length}, cadeaux ${okG}/${expG.length}, idées ${okI}/${expI.length}, photos ${okPhotos}/${expPhotos}`;
-    try { localStorage.setItem('noel2026_v2_import', JSON.stringify({ at: new Date().toISOString(), summary })); } catch (e) { /* ignore */ }
-    modal(`<h3>${all ? '✅ Import terminé' : '⚠️ Import à vérifier'}</h3>${line('Envies', okW, expW.length)}${line('Carnets', okL, L.people.length)}${line('Cadeaux', okG, expG.length)}${line('Idées en vrac', okI, expI.length)}${line('Photos', Math.min(okPhotos, expPhotos), expPhotos)}
-      <p class="note">Déjà présents (ignorés, rien n’est écrasé) : ${res.skipped_existing}. Photos ajoutées : ${up}${upFail ? `, échecs : ${upFail}` : ''}.</p>
-      <p class="note"><b>Tes données locales n’ont pas été supprimées.</b> Tu peux relancer l’import sans risque de doublons.</p><div class="row"><button class="pri" data-close>OK</button></div>`);
-    S.tab = 'mine'; render();
+      stage = 'vérification'; prog('Vérification…');
+    } catch (e) { return importErr(stage, e); }
+    try {
+      const after = await api.verifyLegacy(); await refresh(true);
+      const lk = {}; after.lists.forEach((l) => { lk[l.id] = l.legacy_key; });
+      const server = new Set(after.items.map((i) => (lk[i.list_id] || '') + '|' + i.legacy_key)), inboxSrv = new Set(after.inbox.map((i) => i.legacy_key));
+      const expW = [...new Set(L.wishes.map((w) => 'w:' + w.id))], expG = [...new Set(L.people.flatMap((p) => (p.gifts || []).map((g) => 'p:' + p.id + '|g:' + g.id)))], expI = [...new Set(L.inbox.map((i) => 'i:' + i.id))];
+      const okW = expW.filter((k) => server.has('wishes|' + k)).length, okG = expG.filter((k) => server.has(k)).length, okI = expI.filter((k) => inboxSrv.has(k)).length;
+      const okL = L.people.filter((p) => after.lists.some((l) => l.legacy_key === 'p:' + p.id)).length;
+      const expPhotos = Object.keys(photos).length, okPhotos = after.items.filter((i) => i.photo_path).length;
+      const line = (n, a, b) => `<p class="${a === b ? 'okmsg' : 'err'}">${a === b ? '✓' : '✗'} ${n} : ${a} / ${b}</p>`;
+      const all = okW === expW.length && okG === expG.length && okI === expI.length && okL === L.people.length;
+      const summary = `envies ${okW}/${expW.length}, cadeaux ${okG}/${expG.length}, idées ${okI}/${expI.length}, photos ${okPhotos}/${expPhotos}`;
+      try { localStorage.setItem('noel2026_v2_import', JSON.stringify({ at: new Date().toISOString(), summary })); } catch (e) { /* ignore */ }
+      modal(`<h3>${all ? '✅ Import terminé' : '⚠️ Import à vérifier'}</h3>${line('Envies', okW, expW.length)}${line('Carnets', okL, L.people.length)}${line('Cadeaux', okG, expG.length)}${line('Idées en vrac', okI, expI.length)}${line('Photos', Math.min(okPhotos, expPhotos), expPhotos)}
+        <p class="note">Déjà présents (ignorés, rien n’est écrasé) : ${res.skipped_existing}. Photos ajoutées : ${up}${upFail ? `, échecs : ${upFail}` : ''}.</p>
+        <p class="note"><b>Tes données locales n’ont pas été supprimées.</b> Tu peux relancer l’import sans risque de doublons.</p><div class="row"><button class="pri" data-close>OK</button></div>`);
+      S.tab = 'mine'; render();
+    } catch (e) { importErr('vérification', e); }
   }
 
   // ------------------------------------------------------------------ actions
