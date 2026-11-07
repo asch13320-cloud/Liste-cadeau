@@ -1,7 +1,14 @@
-const CACHE = 'noel-2026-v2';
+const CACHE = 'noel-2026-v3';
 const ASSETS = [
   './',
   './index.html',
+  './local.html',
+  './style.css',
+  './v2.css',
+  './js/config.js',
+  './js/api.js',
+  './js/ui.js',
+  './vendor/supabase-js-2.118.0.min.js',
   './manifest.json',
   './favicon-sapin-arrondi.ico',
   './icon-192.png',
@@ -29,36 +36,16 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-
-  // Pages : réseau d'abord (les mises à jour arrivent tout de suite), cache en secours hors-ligne.
-  if (req.mode === 'navigate') {
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE).then((c) => c.put('./index.html', clone));
-          }
-          return res;
-        })
-        .catch(() => caches.match('./index.html').then((r) => r || caches.match('./')))
-    );
-    return;
-  }
-
-  // Autres fichiers : cache d'abord, mis à jour en arrière-plan.
+  // Réseau d'abord (la dernière version de l'app arrive tout de suite) ; le cache sert hors-ligne.
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const fetched = fetch(req)
-        .then((res) => {
-          if (res && res.status === 200) {
-            const clone = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, clone));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || fetched;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const clone = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req, { ignoreSearch: true }).then((r) => r || (req.mode === 'navigate' ? caches.match('./index.html') : Response.error())))
   );
 });

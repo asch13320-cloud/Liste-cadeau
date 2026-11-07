@@ -1,5 +1,5 @@
 const {JSDOM}=require('jsdom');const fs=require('fs');
-const html=fs.readFileSync(__dirname+'/../index.html','utf8').replace(/<link[^>]*fonts[^>]*>/g,'');
+const html=fs.readFileSync(__dirname+'/../local.html','utf8').replace(/<link[^>]*fonts[^>]*>/g,'');
 const seed={wishes:[{id:'w1',name:'Lampe',price:'30',prio:"J'adorerais",cat:'Maison',status:'Envie',fav:true,photo:'data:image/jpeg;base64,AAAA',link:'https://x.fr',notes:'beige'}],
  people:[{id:'p1',name:'Maman',emoji:'🎀',budget:'100',gifts:[{id:'g1',name:'Écharpe',price:'25',spent:'22',bought:true,wrapped:false,notes:'secret',link:''}]}],inbox:[{id:'i1',t:'Plaid — 40 €'}]};
 function boot(ls,opts={}){

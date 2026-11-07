@@ -67,7 +67,7 @@ t('lecteur : ne peut PAS modifier', await as('C', async () => (await q("update i
 t('lecteur : ne peut PAS supprimer', await as('C', async () => (await q('delete from items where id=$1 returning id', [I1])).length === 0));
 t('lecteur : modifications bien absentes', (await q('select name from items where id=$1', [I1]))[0].name === 'Écharpe');
 t('lecteur : ne voit que sa propre ligne de membre', await as('C', async () => (await q('select 1 from list_members')).length === 1));
-t('lecteur : ne voit pas les autres profils', await as('C', async () => (await q('select 1 from profiles')).length === 1));
+t('lecteur : voit le profil du propriétaire mais pas celui des autres membres', await as('C', async () => { const r = await q('select id from profiles'); return r.length === 2 && r.some((x) => x.id === U.A) && !r.some((x) => x.id === U.B); }));
 t('lecteur : ne s’auto-promeut pas', await as('C', async () => (await q("update list_members set role='owner' where user_id=$1 returning 1", [U.C])).length === 0));
 t('lecteur : pas d’insertion de membre', !!(await as('C', () => err(q("insert into list_members values ($1,$2,'collaborator')", [L, U.C])))));
 t('lien reader ne rétrograde pas un collaborateur', (await as('B', () => q('select redeem_invite($1) r', [tokR])))[0].r.role === 'collaborator');

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<link rel="icon" href="./favicon-sapin-arrondi.ico" type="image/x-icon">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#c9473d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Noël 2026">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<title>Mon catalogue de Noël · version locale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><div class="head-inner"><div><div class="kicker">Le petit atelier des envies</div><h1>Mon catalogue de Noël</h1></div><div class="cd" id="cd"></div></div></header>
+<main id="app"></main>
+<nav class="tabs" id="tabs"></nav>
+<dialog id="dlg"></dialog>
+<input type="file" id="imp" accept="application/json,.json" hidden>
+<script>
+const $=s=>document.querySelector(s),K='noel2026';
+let S,LOADERR=false;
+try{const raw=localStorage.getItem(K);if(raw){try{S=JSON.parse(raw)}catch(e){LOADERR=true;try{localStorage.setItem(K+'_corrompu_'+Date.now(),raw)}catch(_){}}}}catch(e){}
+if(!S||typeof S!=='object'||Array.isArray(S))S={};
+S.wishes=Array.isArray(S.wishes)?S.wishes:[];S.inbox=Array.isArray(S.inbox)?S.inbox:[];S.people=Array.isArray(S.people)?S.people:[];
+S.people.forEach(p=>{if(!Array.isArray(p.gifts))p.gifts=[]});
+let T='home',F='Toutes',P=null;
+function toast(m){let t=$('#toast');if(!t){t=document.createElement('div');t.id='toast';t.setAttribute('role','alert');document.body.appendChild(t)}t.textContent=m;t.className='on';clearTimeout(toast.t);toast.t=setTimeout(()=>t.className='',7000)}
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(S));return true}catch(e){toast('⚠️ Enregistrement impossible : la mémoire du navigateur est pleine. Exporte tes données (en bas de l’accueil) avant de continuer.');return false}};
+const uid=()=>(window.crypto&&crypto.randomUUID)?crypto.randomUUID():Math.random().toString(36).slice(2,9)+Date.now().toString(36);
+const eur=n=>(Math.round((+n||0)*100)/100).toLocaleString('fr-FR')+' €';
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const safe=u=>/^https?:\/\//i.test(u||'')?u:'';
+const PR=["J'adorerais","J'aime bien","Pourquoi pas"],CA=["Beauté","Vêtements","Maison","Tech","Loisirs","Autre"],ST=["Idée","Envie","Reçu"],SI={Idée:'💭',Envie:'⭐',Reçu:'🎁'};
+const days=Math.max(0,Math.ceil((new Date(2026,11,25)-new Date())/864e5));
+$('#cd').textContent=days?'J-'+days+' ✨':'C’est Noël ! 🎅';
+
+function shrink(file){return new Promise(r=>{const fr=new FileReader();fr.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,320/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=im.width*k;c.height=im.height*k;c.getContext('2d').drawImage(im,0,0,c.width,c.height);r(c.toDataURL('image/jpeg',.7))};im.onerror=()=>r();im.src=fr.result};fr.readAsDataURL(file)})}
+
+function openForm(title,fields,onSave){
+ const d=$('#dlg');
+ d.innerHTML=`<form id="f"><h3>${title}</h3>${fields.map(f=>`<label>${f.l}${
+  f.t==='sel'?`<select name="${f.k}">${f.o.map(o=>`<option ${o===f.v?'selected':''}>${esc(o)}</option>`).join('')}</select>`:
+  f.t==='area'?`<textarea name="${f.k}" rows="3">${esc(f.v)}</textarea>`:
+  f.t==='photo'?`<input type="file" name="${f.k}" accept="image/*">`:
+  `<input name="${f.k}" type="${f.t||'text'}" ${f.t==='number'?'step="any" inputmode="decimal" min="0"':''} value="${esc(f.v)}" ${f.r?'required':''}>`}</label>`).join('')}
+ <div class="row"><button type="button" class="ghost" data-close>Annuler</button><button class="pri">Enregistrer</button></div></form>`;
+ d.showModal();
+ $('#f').onsubmit=async e=>{e.preventDefault();const fd=new FormData(e.target),o={};
+  for(const f of fields){if(f.t==='photo'){const x=fd.get(f.k);if(x&&x.size)o[f.k]=await shrink(x)}else o[f.k]=fd.get(f.k)}
+  d.close();onSave(o);save();render()};
+}
+function pick(title,opts,cb){
+ const d=$('#dlg');
+ d.innerHTML=`<h3>${title}</h3><div class="pk">${opts.map((o,i)=>`<button data-i="${i}">${esc(o.l)}</button>`).join('')}</div><div class="row"><button class="ghost" data-close>Annuler</button></div>`;
+ d.showModal();
+ d.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>{d.close();cb(opts[b.dataset.i].v);save();render()});
+}
+const ask=cb=>pick('Supprimer ?',[{v:1,l:'🗑️ Oui, supprimer'}],cb);
+const who=cb=>{if(!S.people.length){pForm();return}pick('Pour qui ?',S.people.map(p=>({v:p.id,l:p.emoji+' '+p.name})),v=>cb(S.people.find(p=>p.id===v)))};
+const fw=id=>S.wishes.find(w=>w.id===id),fp=id=>S.people.find(p=>p.id===id);
+const fg=id=>{for(const p of S.people){const g=p.gifts.find(g=>g.id===id);if(g)return[p,g]}return[]};
+
+function wForm(w){
+ openForm(w?'Modifier l’envie':'Nouvelle envie 🎀',[
+  {k:'name',l:'Cadeau',v:w?w.name:'',r:1},{k:'price',l:'Prix (€)',t:'number',v:w?w.price:''},
+  {k:'prio',l:'Priorité',t:'sel',o:PR,v:w&&w.prio},{k:'cat',l:'Catégorie',t:'sel',o:CA,v:w&&w.cat},
+  {k:'status',l:'Statut',t:'sel',o:ST,v:w?w.status:'Envie'},{k:'link',l:'Lien',t:'text',v:w?w.link:''},
+  {k:'notes',l:'Notes (couleur, taille, modèle…)',t:'area',v:w?w.notes:''},{k:'photo',l:'Photo',t:'photo'}],
+ o=>{o.link=safe(o.link);const x=w||{id:uid(),fav:false};if(!o.photo)delete o.photo;Object.assign(x,o);if(!w)S.wishes.unshift(x)});
+}
+function gForm(p,g){
+ openForm(g?'Modifier le cadeau':'Nouveau cadeau pour '+p.name,[
+  {k:'name',l:'Idée',v:g?g.name:'',r:1},{k:'price',l:'Prix (€)',t:'number',v:g?g.price:''},
+  {k:'spent',l:'Dépensé réellement (€)',t:'number',v:g?g.spent:''},{k:'link',l:'Lien',t:'text',v:g?g.link:''},
+  {k:'notes',l:'🔒 Notes secrètes',t:'area',v:g?g.notes:''}],
+ o=>{o.link=safe(o.link);const x=g||{id:uid(),bought:false,wrapped:false};Object.assign(x,o);if(!g)p.gifts.push(x)});
+}
+function pForm(p){
+ openForm(p?'Modifier la personne':'Nouvelle personne 💕',[
+  {k:'name',l:'Prénom',v:p?p.name:'',r:1},{k:'emoji',l:'Emoji',v:p?p.emoji:'🎀'},{k:'budget',l:'Budget prévu (€)',t:'number',v:p?p.budget:''}],
+ o=>{const x=p||{id:uid(),gifts:[]};Object.assign(x,o);if(!p)S.people.push(x)});
+}
+const price=t=>{const m=t.match(/(\d+[.,]?\d*)\s*€/);return m?+m[1].replace(',','.'):''};
+const clean=t=>t.replace(/[—–-]?\s*\d+[.,]?\d*\s*€/,'').trim()||t;
+
+const A={
+ tab:id=>{T=id;P=null},export:()=>{exportData()},copy:()=>{copyData()},import:()=>{$('#imp').click()},pastetxt:()=>{pasteRestore()},wf:id=>{F=id},back:()=>{P=null},popen:id=>{T='people';P=id},
+ wadd:()=>wForm(),wedit:id=>wForm(fw(id)),
+ wdel:id=>ask(()=>{S.wishes=S.wishes.filter(w=>w.id!==id)}),
+ wfav:id=>{const w=fw(id);w.fav=!w.fav},
+ wnext:id=>{const w=fw(id);w.status=ST[(ST.indexOf(w.status)+1)%3]},
+ wgive:id=>who(p=>{const w=fw(id);const g={id:uid(),name:w.name,link:w.link,price:w.price,notes:w.notes,bought:false,wrapped:false,prio:w.prio,cat:w.cat,status:w.status,fav:!!w.fav};if(w.photo)g.photo=w.photo;p.gifts.push(g);S.wishes=S.wishes.filter(x=>x.id!==id);save();render()}),
+ padd:()=>pForm(),pedit:id=>pForm(fp(id)),
+ pdel:id=>ask(()=>{S.people=S.people.filter(p=>p.id!==id);P=null}),
+ gadd:id=>gForm(fp(id)),gedit:id=>{const[p,g]=fg(id);gForm(p,g)},
+ gdel:id=>ask(()=>{const[p]=fg(id);p.gifts=p.gifts.filter(g=>g.id!==id)}),
+ gbuy:id=>{const[,g]=fg(id);g.bought=!g.bought;const e=v=>v===''||v==null;if(g.bought){if(e(g.spent))g.spent=e(g.spentPrev)?g.price:g.spentPrev;delete g.spentPrev}else{if(!e(g.spent))g.spentPrev=g.spent;g.spent=''}},
+ gwrap:id=>{const[,g]=fg(id);g.wrapped=!g.wrapped},
+ gwish:id=>{const[p,g]=fg(id);const w={id:uid(),name:g.name,link:g.link,price:g.price,notes:g.notes,prio:g.prio||PR[1],cat:g.cat||CA[5],status:g.status||'Envie',fav:!!g.fav};if(g.photo)w.photo=g.photo;S.wishes.unshift(w);p.gifts=p.gifts.filter(x=>x.id!==id)},
+ vwish:id=>{const v=S.inbox.find(i=>i.id===id);S.wishes.unshift({id:uid(),name:clean(v.t),price:price(v.t),prio:PR[1],cat:CA[5],status:'Idée',fav:false,notes:'',link:''});S.inbox=S.inbox.filter(i=>i.id!==id)},
+ vgive:id=>who(p=>{const v=S.inbox.find(i=>i.id===id);p.gifts.push({id:uid(),name:clean(v.t),price:price(v.t),bought:false,wrapped:false});S.inbox=S.inbox.filter(i=>i.id!==id);save();render()}),
+ vdel:id=>{S.inbox=S.inbox.filter(i=>i.id!==id)}
+};
+const lastExport=()=>{try{const d=localStorage.getItem(K+'_lastexport');return d?'Dernière sauvegarde : '+new Date(d).toLocaleDateString('fr-FR'):'Aucune sauvegarde pour l’instant'}catch(e){return ''}};
+const snapshot=()=>({app:'liste-cadeau',version:1,exportedAt:new Date().toISOString(),data:S});
+const stamp=()=>{try{localStorage.setItem(K+'_lastexport',new Date().toISOString())}catch(e){}};
+async function exportData(){
+ const json=JSON.stringify(snapshot(),null,2),name='noel2026-sauvegarde-'+new Date().toISOString().slice(0,10)+'.json';
+ let step='préparation';
+ try{
+  let done=false;
+  if(navigator.canShare&&window.File){
+   try{const file=new File([json],name,{type:'application/json'});
+    if(navigator.canShare({files:[file]})){step='partage';await navigator.share({files:[file],title:'Sauvegarde Noël 2026'});done=true}}
+   catch(e){if(e&&e.name==='AbortError')return}
+  }
+  if(!done){step='téléchargement';const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([json],{type:'application/json'}));a.download=name;a.rel='noopener';document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(a.href)},60000)}
+  stamp();toast(done?'✅ Sauvegarde partagée.':'✅ Sauvegarde téléchargée : cherche « '+name+' » dans tes Téléchargements.');render();
+ }catch(e){toast('⚠️ Export impossible ('+step+' : '+((e&&e.name)||'erreur')+'). Utilise « Copier la sauvegarde » à la place.')}
+}
+function textDialog(title,text,readonly,onOk,okLabel){
+ const d=$('#dlg');
+ d.innerHTML='<h3>'+title+'</h3><p id="txerr" style="color:var(--red);font-size:14px;margin:0 0 8px"></p><textarea id="tx" rows="8" style="width:100%;font:12px monospace"'+(readonly?' readonly':' placeholder="Colle ici le texte de ta sauvegarde"')+'>'+esc(text)+'</textarea><div class="row"><button type="button" class="ghost" data-close>Fermer</button>'+(onOk?'<button type="button" class="pri" id="txok">'+okLabel+'</button>':'')+'</div>';
+ d.showModal();const t=$('#tx');if(readonly){t.focus();t.select()}
+ if(onOk)$('#txok').onclick=()=>onOk(t.value);
+}
+async function copyData(){
+ const json=JSON.stringify(snapshot(),null,2);
+ try{await navigator.clipboard.writeText(json);stamp();toast('✅ Sauvegarde copiée. Colle-la dans une note ou un mail envoyé à toi-même.');render()}
+ catch(e){stamp();textDialog('Copie ce texte 📋',json,true)}
+}
+function pasteRestore(){
+ textDialog('Restaurer depuis un texte',' ',false,v=>{const d=parseBackup(v);if(!d){$('#txerr').textContent='⚠️ Ce texte n’est pas une sauvegarde valide.';return}$('#dlg').close();confirmRestore(d)},'Vérifier');
+}
+function confirmRestore(d){
+ const n=d.people.reduce((s,p)=>s+p.gifts.length,0);
+ pick('Restaurer cette sauvegarde ?<br><small style="font:16px var(--hand);color:var(--muted)">'+d.wishes.length+' envie(s), '+d.people.length+' carnet(s), '+n+' cadeau(x), '+d.inbox.length+' idée(s) en vrac.<br>Tes données actuelles seront remplacées (une copie est gardée).</small>',[{v:1,l:'♻️ Oui, restaurer'}],()=>restoreData(d));
+}
+function parseBackup(txt){
+ let o;try{o=JSON.parse(txt)}catch(e){return null}
+ const d=o&&o.data?o.data:o;
+ if(!d||!Array.isArray(d.wishes)||!Array.isArray(d.people)||!Array.isArray(d.inbox))return null;
+ if(d.people.some(p=>!p||typeof p!=='object'||(p.gifts!=null&&!Array.isArray(p.gifts))))return null;
+ d.people.forEach(p=>{if(!p.gifts)p.gifts=[]});
+ return d;
+}
+function restoreData(d){
+ try{localStorage.setItem(K+'_avant_restauration',JSON.stringify(S))}catch(e){toast('⚠️ Pas assez de place pour garder une copie de sécurité : exporte d’abord tes données actuelles.');return}
+ S=d;if(save())toast('✅ Sauvegarde restaurée. Une copie de tes anciennes données a été gardée dans ce téléphone.')
+}
+$('#imp').addEventListener('change',e=>{
+ const f=e.target.files[0];e.target.value='';if(!f)return;
+ if(f.size>20*1024*1024){toast('⚠️ Ce fichier est trop gros pour être une sauvegarde.');return}
+ const r=new FileReader();r.onload=()=>{const d=parseBackup(r.result);if(!d){toast('⚠️ Ce fichier n’est pas une sauvegarde valide.');return}
+  confirmRestore(d)};
+ r.onerror=()=>toast('⚠️ Lecture du fichier impossible.');r.readAsText(f)});
+document.addEventListener('click',e=>{
+ if(e.target.closest('[data-close]')){$('#dlg').close();return}
+ const b=e.target.closest('[data-a]');if(!b)return;
+ const f=A[b.dataset.a];if(f){f(b.dataset.id);save();render()}
+});
+document.addEventListener('submit',e=>{
+ if(e.target.id==='qa'){e.preventDefault();const i=e.target.q;if(i.value.trim()){S.inbox.unshift({id:uid(),t:i.value.trim()});save();T='vrac';render()}}
+});
+
+const btn=(a,id,l,c)=>`<button data-a="${a}" data-id="${id}" class="${c||''}">${l}</button>`;
+
+function wCard(w){return`<article class="card ${w.fav?'fav':''}">
+ ${w.photo?`<img class="ph" src="${w.photo}" alt="">`:`<div class="ph" style="height:112px;display:grid;place-items:center;font-size:52px">✂️</div>`}
+ <div class="top"><h4 class="wish-title">${esc(w.name)}</h4>${btn('wfav',w.id,w.fav?'💖':'☆','heart')}</div>
+ <div class="tags"><span class="tag p${PR.indexOf(w.prio)}">${esc(w.prio)}</span><span class="tag">${esc(w.cat)}</span>${w.price!==''&&w.price!=null?`<span class="tag">${eur(w.price)}</span>`:''}</div>
+ ${w.notes?`<p class="note">✎ ${esc(w.notes)}</p>`:''}
+ <div class="acts">${btn('wnext',w.id,SI[w.status]+' · changer','on')}${btn('wgive',w.id,'🎁 Pour qui ?')}${btn('wedit',w.id,'✎')}${w.link?`<a href="${esc(w.link)}" target="_blank" rel="noopener">Voir le produit ↗</a>`:''}${btn('wdel',w.id,'×')}</div></article>`}
+
+function stats(){const g=S.people.flatMap(p=>p.gifts),sum=a=>a.reduce((s,x)=>s+(+x||0),0),bud=sum(S.people.map(p=>p.budget)),sp=sum(g.map(x=>x.spent));
+ return{n:S.people.length,i:g.length,b:g.filter(x=>x.bought).length,w:g.filter(x=>x.wrapped).length,sp,bud,rest:bud-sp}}
+
+
+function home(){const s=stats();
+ return`<section class="cover"><div class="cover-copy"><div class="edition">Édition spéciale · Hiver 2026</div><h2>La magie<br>des envies.</h2><p>Un petit carnet de choses qui me feraient plaisir…</p></div><div class="cover-stamp">100%<br>envies<br> choisies</div><div class="cover-art">🎄</div></section>
+ <form id="qa" class="qa"><input name="q" placeholder="Une idée à découper et garder…" aria-label="Idée en vrac"><button class="pri">Coller ✂</button></form>
+ <div class="section-head"><h2>Dans mon atelier</h2><span class="paper-note">Le compte à rebours est lancé</span></div>
+ <div class="stats"><div class="stat"><b>${s.n}</b><span>carnets</span></div><div class="stat"><b>${s.i}</b><span>cadeaux notés</span></div><div class="stat"><b>${S.wishes.length}</b><span>mes envies</span></div>
+ <div class="stat pine"><b>${s.b}</b><span>trouvés</span></div><div class="stat pine"><b>${s.w}</b><span>emballés</span></div><div class="stat red"><b>${eur(s.sp)}</b><span>dépensés</span></div></div>
+ <div class="section-head"><h2>Les petits carnets</h2><span class="paper-note">Pour les gens que j'aime ♥</span></div>
+ ${S.people.length?`<div>${S.people.map(p=>{const b=p.gifts.filter(g=>g.bought).length;return`<button class="person tap" data-a="popen" data-id="${p.id}"><div class="top"><h4>${esc(p.emoji)} ${esc(p.name)}</h4><span class="small-label">${p.gifts.length} idée${p.gifts.length>1?'s':''}</span></div><div class="bar"><i style="width:${p.gifts.length?b/p.gifts.length*100:0}%"></i></div><span class="small-label">${b} cadeau${b>1?'x':''} trouvé${b>1?'s':''} · budget ${p.budget?eur(p.budget):'libre'}</span></button>`}).join('')}</div>`:`<p class="empty">Ton premier carnet n'attend que son prénom. 🎀</p>`}
+ <div class="section-head"><h2>Mon coin des coups de cœur</h2><span class="paper-note">À garder sous le coude</span></div>
+ ${S.wishes.filter(w=>w.fav).length?`<div class="scrap-grid">${S.wishes.filter(w=>w.fav).slice(0,3).map(wCard).join('')}</div>`:`<p class="empty">Ajoute des étoiles à tes envies pour les retrouver ici.</p>`}
+ <div class="card"><div class="top"><div><div class="small-label">La hotte en préparation</div><h4>Budget restant</h4></div><strong style="font:700 23px var(--display);color:var(--pine)">${eur(s.rest)}</strong></div><p class="note">Sur ${eur(s.bud)} prévus pour tous les carnets.</p></div>
+ <div class="section-head"><h2>Ma sauvegarde 💾</h2><span class="paper-note">${lastExport()}</span></div>
+ <div class="card"><p class="note">Tout est enregistré dans ce téléphone uniquement. Fais une sauvegarde de temps en temps : c’est ton filet de sécurité.</p><div class="acts">${btn('export',0,'⬇ Exporter mes données','on')}${btn('copy',0,'📋 Copier la sauvegarde')}${btn('import',0,'⬆ Restaurer un fichier')}${btn('pastetxt',0,'✎ Restaurer un texte copié')}</div></div>`}
+
+
+function wishes(){const l=S.wishes.filter(w=>F==='Toutes'||w.status===F);
+ return`<div class="section-head"><div><div class="small-label">Mon carnet personnel</div><h2>Mes envies à moi 🎀</h2></div><span class="paper-note">${l.length} découpe${l.length>1?'s':''}</span></div>
+ <p class="intro">Je découpe, je colle, je rêve un peu.</p>
+ <div class="chips">${['Toutes',...ST].map(c=>`<button class="chip ${F===c?'on':''}" data-a="wf" data-id="${c}">${c==='Toutes'?'Tout le carnet':c}</button>`).join('')}<button class="chip" data-a="wadd">＋ Ajouter une découpe</button></div>
+ ${l.length?`<div class="scrap-grid">${l.map(wCard).join('')}</div>`:'<p class="empty">La page est encore blanche… à toi de la remplir ! ✂️</p>'}`}
+
+
+function people(){
+ if(P&&fp(P)){const p=fp(P),sp=p.gifts.reduce((s,g)=>s+(+g.spent||0),0),pc=p.budget?Math.min(100,sp/p.budget*100):0;
+  return`<button class="ghost" data-a="back">← Tous les carnets</button><div class="section-head"><div><div class="small-label">Le carnet de</div><h2>${esc(p.emoji)} ${esc(p.name)}</h2></div><span class="paper-note">Édition privée</span></div>
+ <div class="card"><div class="top"><div><div class="small-label">La hotte de ${esc(p.name)}</div><h4>${p.gifts.length} idée${p.gifts.length>1?'s':''} à préparer</h4></div><b style="font:700 22px var(--display)">${eur(sp)}</b></div>${p.budget?`<p class="note">Dépensé sur ${eur(p.budget)} prévus</p>`:''}<div class="bar"><i style="width:${pc}%"></i></div>
+ <div class="acts">${btn('gadd',p.id,'＋ Coller une idée','on')}${btn('pedit',p.id,'✎ Modifier le carnet')}${btn('pdel',p.id,'Supprimer')}</div></div>
+ ${p.gifts.length?`<div class="scrap-grid">${p.gifts.map(g=>`<article class="card">${g.photo?`<img class="ph" style="height:110px;object-fit:cover" src="${g.photo}" alt="">`:`<div class="ph" style="height:80px;display:grid;place-items:center;font-size:40px">${g.bought?'🎁':'✂️'}</div>`}<div class="top"><h4>${esc(g.name)}</h4><span class="tag">${g.price!==''&&g.price!=null?eur(g.price):'–'}</span></div>
+ ${g.bought&&g.spent!==''?`<div class="note">Dépensé : ${eur(g.spent)}</div>`:''}${g.notes?`<p class="note">🔒 ${esc(g.notes)}</p>`:''}
+ <div class="acts">${btn('gbuy',g.id,g.bought?'✓ Trouvé !':'🛍️ Trouvé ?',g.bought?'on':'')}${btn('gwrap',g.id,g.wrapped?'🎀 Emballé !':'🎀 Emballer',g.wrapped?'on':'')}${btn('gedit',g.id,'✎')}${btn('gwish',g.id,'→ Mes envies')}${g.link?`<a href="${esc(g.link)}" target="_blank" rel="noopener">Lien ↗</a>`:''}${btn('gdel',g.id,'×')}</div></article>`).join('')}</div>`:'<p class="empty">Aucune découpe pour le moment. Le carnet est prêt !</p>'}`}
+ return`<div class="section-head"><div><div class="small-label">Les gens qu'on aime</div><h2>Les petits carnets 🎁</h2></div><span class="paper-note">${S.people.length} personne${S.people.length>1?'s':''}</span></div>
+ <p class="intro">Une page à remplir pour chacun, sans oublier les surprises.</p><button class="pri" data-a="padd" style="margin-bottom:16px">＋ Créer un carnet</button>
+ ${S.people.map(p=>{const b=p.gifts.filter(g=>g.bought).length;return`<button class="person tap" data-a="popen" data-id="${p.id}"><div class="top"><h4>${esc(p.emoji)} ${esc(p.name)}</h4><span class="tag">${p.budget?eur(p.budget):'budget libre'}</span></div><div class="bar"><i style="width:${p.gifts.length?b/p.gifts.length*100:0}%"></i></div><span class="small-label">${p.gifts.length} idée${p.gifts.length>1?'s':''} · ${b} trouvé${b>1?'s':''}</span></button>`}).join('')||'<p class="empty">Crée le premier carnet de ta tribu. ✨</p>'}`}
+
+
+function vrac(){return`<div class="section-head"><div><div class="small-label">Les bouts de papier qui traînent</div><h2>Mon tiroir à idées 💡</h2></div></div><p class="intro">On note vite, on rangera plus tard.</p>${S.inbox.length?`<div class="scrap-grid">${S.inbox.map(v=>`<article class="card"><div class="small-label">À classer</div><h4>${esc(v.t)}</h4><div class="acts" style="margin-top:12px">${btn('vgive',v.id,'🎁 Pour qui ?')}${btn('vwish',v.id,'🎀 Mes envies')}${btn('vdel',v.id,'×')}</div></article>`).join('')}</div>`:'<p class="empty">Ton tiroir est vide. Profite, ça ne durera pas. 😌</p>'}`}
+
+function render(){
+ $('#app').innerHTML={home,wishes,people,vrac}[T]();
+ $('#tabs').innerHTML=[['home','🏠','Atelier'],['wishes','✂️','Mon carnet'],['people','🎁','La famille'],['vrac','📌','À classer']].map(t=>`<button class="${T===t[0]?'on':''}" data-a="tab" data-id="${t[0]}"><span>${t[1]}</span>${t[2]}</button>`).join('');
+}
+render();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('SW registered', reg.scope))
+      .catch(err => console.log('SW failed', err));
+  });
+}
+</script>
+</body>
+</html>

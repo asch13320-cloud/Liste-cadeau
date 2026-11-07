@@ -5,7 +5,9 @@ Supabase → **SQL Editor** → **New query**. Colle puis exécute (**Run**), da
 1. `supabase/migrations/20261105000001_init.sql`
 2. `supabase/migrations/20261105000002_import_legacy.sql`
 
-Chaque fichier doit se terminer par « Success ». Ne les exécute qu'une fois.
+3. `supabase/migrations/20261107000003_profiles_owner_visible.sql` (petit correctif : un lecteur voit le prénom du propriétaire)
+
+Chaque fichier doit se terminer par « Success ». Ne les exécute qu'une fois chacun. (`supabase/setup-complet.sql` regroupe les fichiers 1 et 2 pour une installation neuve.)
 
 ## 2. Authentification
 Supabase → **Authentication → URL Configuration** :

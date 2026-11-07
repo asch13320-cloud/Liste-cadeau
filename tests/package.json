@@ -2,7 +2,7 @@
  "name": "liste-cadeau-tests",
  "private": true,
  "scripts": {
-  "test": "node v1-sauvegarde.test.js && node og.test.mjs && node db/rls.test.mjs"
+  "test": "node v1-sauvegarde.test.js && node v2-ui.test.js && node og.test.mjs && node db/rls.test.mjs"
  },
  "devDependencies": {
   "jsdom": "^24.0.0",
