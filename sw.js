@@ -1,4 +1,4 @@
-const CACHE = 'noel-2026-v3';
+const CACHE = 'noel-2026-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -38,7 +38,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
   // Réseau d'abord (la dernière version de l'app arrive tout de suite) ; le cache sert hors-ligne.
   e.respondWith(
-    fetch(req)
+    fetch(req.mode === 'navigate' ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : new Request(req, { cache: 'no-cache' }))
       .then((res) => {
         if (res && res.status === 200) {
           const clone = res.clone();

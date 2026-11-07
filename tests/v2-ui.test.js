@@ -232,11 +232,17 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   } });
   await click(w, '#me');
   t('profil : données locales détectées', /1<\/b> envie|<b>1<\/b>/.test($(w, '#app').innerHTML) && /Rien n’est supprimé/.test(txt(w)));
-  await click(w, '[data-a="limport"]');   t('import : aucun appel serveur avant la sauvegarde', !importedPayload);
   w.URL.createObjectURL = () => 'blob:x'; w.URL.revokeObjectURL = () => {}; w.HTMLAnchorElement.prototype.click = function () { w.__dl = this.download; };
-  await click(w, '[data-a="lbackup"]'); t('sauvegarde JSON téléchargée', /^noel2026-sauvegarde-\d{4}-\d{2}-\d{2}\.json$/.test(w.__dl || ''));
+  // cas Android : la feuille de partage est annulée → on demande avant d'importer sans sauvegarde
+  Object.defineProperty(w.navigator, 'canShare', { value: () => true, configurable: true });
+  Object.defineProperty(w.navigator, 'share', { value: () => Promise.reject(Object.assign(new Error('x'), { name: 'AbortError' })), configurable: true });
+  await click(w, '[data-a="limport"]');
+  t('sauvegarde annulée : confirmation demandée, aucun envoi', /Continuer sans sauvegarde/.test($(w, '#dlg').textContent) && !importedPayload);
+  await click(w, '[data-close]'); t('refus : toujours aucun envoi', !importedPayload);
+  Object.defineProperty(w.navigator, 'canShare', { value: () => false, configurable: true });
   const before = w.localStorage.getItem('noel2026');
-  await click(w, '[data-a="limport"]'); await sleep(300);
+  await click(w, '[data-a="limport"]'); await sleep(400);
+  t('import en une étape : sauvegarde téléchargée AVANT l’envoi', /^noel2026-sauvegarde-\d{4}-\d{2}-\d{2}\.json$/.test(w.__dl || '') && !!importedPayload);
   t('import : photos retirées du paquet envoyé (envoyées séparément)', importedPayload && importedPayload.wishes[0].photo === '1' && importedPayload.people[0].gifts[0].photo === '1');
   t('import : 2 photos envoyées dans Storage', w.__F.st.uploads.length === 2 && w.__F.st.uploads.every((p) => /^[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/.test(p)));
   t('import : photos rattachées aux cadeaux', w.__F.db.items.every((i) => i.photo_path));
@@ -245,6 +251,11 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   w.__F.st.uploads.length = 0; await click(w, '[data-close]'); await click(w, '#me'); await click(w, '[data-a="limport"]'); await sleep(300);
   t('relance : aucune photo envoyée en double', w.__F.st.uploads.length === 0);
 
+  // 9a. erreur serveur pendant l'import : détail affiché dans la fenêtre, données intactes
+  w.__F.st.rpc.import_legacy = async () => ({ data: null, error: { message: 'canceling statement due to statement timeout', code: '57014' } });
+  await click(w, '#me'); await click(w, '[data-a="limport"]'); await sleep(300);
+  t('erreur d’import : message DANS la fenêtre avec détail copiable', /n’a pas abouti/.test($(w, '#dlg').textContent) && /57014/.test($(w, '#errtx').value) && /étape : envoi des listes/.test($(w, '#errtx').value) && /intactes/.test($(w, '#dlg').textContent));
+  await click(w, '[data-close]');
   // 9b. icône profil : ouvre le profil, un 2e appui revient à l’accueil
   await click(w, '[data-id="mine"]'); await click(w, '#me');
   t('icône profil : ouvre le profil, bouton actif', /Profil/.test($(w, '#app').textContent) && $(w, '#me').classList.contains('on') && !$(w, '#tabs .on'));
