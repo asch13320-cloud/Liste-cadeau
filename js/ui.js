@@ -363,17 +363,17 @@
   }
 
   // ------------------------------------------------------------------ rendu
-  const TABS = [['home', '🏠', 'Atelier'], ['mine', '🎀', 'Mes listes'], ['collab', '🤝', 'À plusieurs'], ['shared', '💌', 'Partagées'], ['profile', '👤', 'Profil']];
+  const TABS = [['home', '🏠', 'Atelier'], ['mine', '🎀', 'Mes listes'], ['collab', '🤝', 'À plusieurs'], ['shared', '💌', 'Partagées']];
   function render() {
-    const app = $('#app'), tabs = $('#tabs');
-    syncChip();
+    const app = $('#app'), tabs = $('#tabs'), me = $('#me');
+    me.hidden = true; syncChip();
     if (S.pub) { app.innerHTML = viewPublic(); tabs.hidden = true; return; }
     if (S.recovery) { app.innerHTML = viewRecovery(); tabs.hidden = true; return; }
     if (S.loading && !S.user) { app.innerHTML = '<p class="empty">Chargement…</p>'; tabs.hidden = true; return; }
     if (!S.user || !D) { app.innerHTML = viewAuth(); tabs.hidden = true; return; }
     const v = { home: viewHome, vrac: viewVrac, mine: () => viewLists('mine'), collab: () => viewLists('collab'), shared: () => viewLists('shared'), detail: viewDetail, profile: viewProfile }[S.tab] || viewHome;
     app.innerHTML = (S.offline || S.cached ? '<p class="banner">⚠️ Hors-ligne : tu vois la dernière version enregistrée. Les modifications sont désactivées tant que la connexion n’est pas revenue.</p>' : '') + v();
-    tabs.hidden = false; tabs.className = 'tabs five';
+    tabs.hidden = false; me.hidden = false; me.classList.toggle('on', S.tab === 'profile'); me.setAttribute('aria-pressed', S.tab === 'profile');
     const active = S.tab === 'detail' ? (list(S.lid) ? (list(S.lid).role === 'reader' ? 'shared' : isCollab(list(S.lid)) ? 'collab' : 'mine') : 'mine') : S.tab === 'vrac' ? 'home' : S.tab;
     tabs.innerHTML = TABS.map((t) => `<button class="${active === t[0] ? 'on' : ''}" data-a="tab" data-id="${t[0]}"><span>${t[1]}</span>${t[2]}</button>`).join('');
     hydratePhotos();
@@ -607,6 +607,7 @@
   const ACT = {
     tab: (id) => { S.tab = id; S.lid = null; S.filter = 'all'; render(); window.scrollTo(0, 0); },
     amode: (id) => { S.authMode = id; S.notice = ''; render(); },
+    me: () => ACT.tab(S.tab === 'profile' ? 'home' : 'profile'),
     filter: (id) => { S.filter = id; render(); },
     lopen: (id) => { S.tab = 'detail'; S.lid = id; S.filter = 'all'; render(); window.scrollTo(0, 0); },
     lnew: () => listForm(), lnewc: () => listForm(null, 'collab'), ljoin: () => joinDialog(),

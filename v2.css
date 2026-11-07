@@ -24,3 +24,11 @@ dialog h4{margin:14px 0 6px}
 dialog .copybox{width:100%;font:12px monospace;padding:8px;border:2px solid var(--ink);border-radius:3px;background:#fff}
 .tabs.five button{padding-left:2px;padding-right:2px;font-size:11px}
 a.btnlink{display:inline-block;padding:9px 12px;border:2px solid var(--ink);border-radius:3px;background:var(--paper2);text-decoration:none;color:var(--ink);font:700 14px var(--font)}
+
+/* Profil : petite icône discrète en haut à droite (et non plus dans la barre du bas) */
+header{padding-top:34px}
+.me{position:absolute;top:6px;right:8px;z-index:3;width:27px;height:27px;padding:0;border-radius:50%;border:1.5px solid rgba(255,250,240,.5);background:rgba(255,250,240,.12);color:#fffaf0;font-size:13px;line-height:1;display:grid;place-items:center;opacity:.8}
+.me:hover,.me:focus-visible{opacity:1;background:rgba(255,250,240,.28)}
+.me.on{opacity:1;background:var(--paper2);border-color:var(--ink);color:var(--ink)}
+.me[hidden]{display:none}
+.sync{right:auto;left:20px;top:9px;bottom:auto}
