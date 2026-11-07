@@ -1,0 +1,5 @@
+# Configuration locale (supabase CLI). Les réglages du projet en ligne se font dans le tableau de bord.
+project_id = "liste-cadeau"
+
+[functions.fetch-og]
+verify_jwt = true

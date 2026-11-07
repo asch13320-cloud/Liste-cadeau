@@ -1,0 +1,26 @@
+/* Ajouts V2 — même identité (papier crème, rouge Noël, vert sapin) */
+.sync{position:absolute;right:14px;bottom:8px;font:700 11px var(--font);letter-spacing:.04em;background:rgba(255,250,240,.18);border:1px solid rgba(255,250,240,.5);border-radius:99px;padding:2px 9px;color:#fffaf0}
+.sync.bad{background:var(--ink)}
+.banner{margin:0 0 14px;padding:10px 12px;border:2px dashed var(--ink);border-radius:3px;background:var(--yellow);font:600 14px/1.35 var(--font)}
+.auth{max-width:440px;margin:6px auto 0}
+.auth form{display:grid;gap:12px;background:var(--paper2);border:2px solid var(--ink);box-shadow:5px 5px 0 var(--red);padding:18px;border-radius:3px;transform:rotate(-.4deg)}
+.auth label,dialog label{display:grid;gap:4px;font:700 13px var(--font)}
+.auth input,.auth select{padding:11px;border:2px solid var(--ink);border-radius:3px;background:#fff;font-size:16px}
+.seg{display:flex;gap:6px;margin-bottom:14px}
+.seg button{flex:1;padding:10px;border:2px solid var(--ink);background:var(--paper2);font:700 14px var(--font);border-radius:3px}
+.seg button.on{background:var(--pine);color:#fffaf0}
+.err{color:var(--red);font:700 14px/1.35 var(--font);margin:0}
+.okmsg{color:var(--pine);font:700 14px/1.35 var(--font);margin:0}
+.badge{display:inline-block;padding:1px 8px;border:1.5px solid var(--ink);border-radius:99px;font:700 11px var(--font);background:var(--paper2);margin-right:4px}
+.badge.pine{background:var(--pine);color:#fffaf0}.badge.red{background:var(--red);color:#fffaf0}.badge.blue{background:var(--blue)}
+.member{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line)}
+.member select{padding:6px;border:2px solid var(--ink);border-radius:3px;background:#fff}
+.linkprev{display:flex;gap:10px;align-items:center;padding:8px;border:1.5px dashed var(--ink);border-radius:3px;background:var(--paper);margin:6px 0;font-size:13px}
+.linkprev img{width:56px;height:56px;object-fit:cover;border-radius:3px;flex:none}
+.card .ph{object-fit:cover}
+.private{font:600 13px/1.35 var(--font);color:var(--pine)}
+dialog .sub{font:600 13px/1.4 var(--font);color:var(--muted);margin:0 0 8px}
+dialog h4{margin:14px 0 6px}
+dialog .copybox{width:100%;font:12px monospace;padding:8px;border:2px solid var(--ink);border-radius:3px;background:#fff}
+.tabs.five button{padding-left:2px;padding-right:2px;font-size:11px}
+a.btnlink{display:inline-block;padding:9px 12px;border:2px solid var(--ink);border-radius:3px;background:var(--paper2);text-decoration:none;color:var(--ink);font:700 14px var(--font)}
