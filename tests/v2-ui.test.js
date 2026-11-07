@@ -98,7 +98,7 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
 (async () => {
   // 1. sans session : écran de connexion, erreurs lisibles
   let w = await boot();
-  t('sans session : écran de connexion', !!$(w, '#authform') && /Retrouver mes listes/.test(txt(w)) && $(w, '#tabs').hidden);
+  t('sans session : écran de connexion, pas d’icône profil', !!$(w, '#authform') && /Retrouver mes listes/.test(txt(w)) && $(w, '#tabs').hidden && $(w, '#me').hidden);
   setv($(w, '#authform'), 'email', 'a@x.fr'); setv($(w, '#authform'), 'password', 'mauvais'); await submit(w, $(w, '#authform'));
   t('mauvais mot de passe : message clair', /E-mail ou mot de passe incorrect/.test($(w, '#aerr').textContent));
   await click(w, '[data-id="up"]'); setv($(w, '#authform'), 'email', 'n@x.fr'); setv($(w, '#authform'), 'password', 'court'); await submit(w, $(w, '#authform'));
@@ -108,7 +108,7 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, '[data-id="reset"]'); setv($(w, '#resetform'), 'email', 'n@x.fr'); await submit(w, $(w, '#resetform'));
   t('mot de passe oublié : message neutre (ne révèle pas si le compte existe)', /Si cette adresse a un compte/.test(txt(w)) && w.__F.st.reset.e === 'n@x.fr');
   await click(w, '[data-id="in"]'); setv($(w, '#authform'), 'email', 'moi@x.fr'); setv($(w, '#authform'), 'password', 'motdepasse1'); await submit(w, $(w, '#authform')); await sleep(150);
-  t('connexion : accueil affiché avec 5 onglets', !!$(w, '.cover') && $$(w, '#tabs button').length === 5);
+  t('connexion : accueil affiché avec 4 onglets et l’icône profil en haut', !!$(w, '.cover') && $$(w, '#tabs button').length === 4 && !$(w, '#me').hidden);
 
   // 2. session existante : listes, rôles, cartes
   w = await boot({ setup: (F) => {
@@ -230,7 +230,7 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
       F.db.inbox_items.push({ id: nid(), text: 'Plaid — 40 €', legacy_key: 'i:i1', created_at: '1' }); }
       return { data: { lists_created: 2, items_created: 2, inbox_created: 1, skipped_existing: 0, items: [{ list_id: LW, item_id: IW, legacy: 'w:w1', inserted: true, has_photo: true }, { list_id: LP, item_id: IG, legacy: 'g:g1', inserted: true, has_photo: true }] }, error: null }; };
   } });
-  await click(w, '[data-id="profile"]');
+  await click(w, '#me');
   t('profil : données locales détectées', /1<\/b> envie|<b>1<\/b>/.test($(w, '#app').innerHTML) && /Rien n’est supprimé/.test(txt(w)));
   await click(w, '[data-a="limport"]');   t('import : aucun appel serveur avant la sauvegarde', !importedPayload);
   w.URL.createObjectURL = () => 'blob:x'; w.URL.revokeObjectURL = () => {}; w.HTMLAnchorElement.prototype.click = function () { w.__dl = this.download; };
@@ -242,11 +242,16 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   t('import : photos rattachées aux cadeaux', w.__F.db.items.every((i) => i.photo_path));
   t('import : rapport de vérification complet', /Import terminé/.test(txt(w)) && /Envies : 1 \/ 1/.test(txt(w)) && /Cadeaux : 1 \/ 1/.test(txt(w)) && /Idées en vrac : 1 \/ 1/.test(txt(w)) && /Photos : 2 \/ 2/.test(txt(w)));
   t('import : données locales JAMAIS supprimées', w.localStorage.getItem('noel2026') === before);
-  w.__F.st.uploads.length = 0; await click(w, '[data-close]'); await click(w, '[data-id="profile"]'); await click(w, '[data-a="limport"]'); await sleep(300);
+  w.__F.st.uploads.length = 0; await click(w, '[data-close]'); await click(w, '#me'); await click(w, '[data-a="limport"]'); await sleep(300);
   t('relance : aucune photo envoyée en double', w.__F.st.uploads.length === 0);
 
+  // 9b. icône profil : ouvre le profil, un 2e appui revient à l’accueil
+  await click(w, '[data-id="mine"]'); await click(w, '#me');
+  t('icône profil : ouvre le profil, bouton actif', /Profil/.test($(w, '#app').textContent) && $(w, '#me').classList.contains('on') && !$(w, '#tabs .on'));
+  await click(w, '#me'); t('icône profil : 2e appui → accueil', !!$(w, '.cover') && !$(w, '#me').classList.contains('on'));
+
   // 10. déconnexion
-  await click(w, '[data-id="profile"]'); await click(w, '[data-a="logout"]'); await sleep(100);
+  await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);
   t('déconnexion : retour à l’écran de connexion, copie locale effacée', !!$(w, '#authform') && !w.localStorage.getItem('noel2026_v2cache'));
 
   console.log(`\n${ok} ok, ${ko} échecs`); process.exit(ko ? 1 : 0);
