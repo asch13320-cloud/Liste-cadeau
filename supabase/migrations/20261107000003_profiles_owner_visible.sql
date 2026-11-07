@@ -1,6 +1,6 @@
 -- Un lecteur doit pouvoir voir le prénom du propriétaire de la liste qu'on lui partage
 -- (et seulement lui : pas les autres membres).
-create function public.owner_of_my_list(p_user uuid) returns boolean
+create or replace function public.owner_of_my_list(p_user uuid) returns boolean
 language sql stable security definer set search_path = '' as $$
   select exists (
     select 1 from public.lists l
@@ -9,6 +9,6 @@ language sql stable security definer set search_path = '' as $$
   )
 $$;
 
-drop policy profiles_select on public.profiles;
+drop policy if exists profiles_select on public.profiles;
 create policy profiles_select on public.profiles for select to authenticated
   using (id = (select auth.uid()) or public.shares_list_with(id) or public.owner_of_my_list(id));
