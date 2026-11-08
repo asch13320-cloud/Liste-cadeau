@@ -300,6 +300,49 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   setv(fl2, 'title', 'Papa'); await submit(w, fl2); await sleep(120);
   t('carnet créé et ouvert', w.__F.db.lists.some((l) => l.title === 'Papa' && l.kind === 'gifts_for') && /Papa/.test($(w, '#app').textContent));
 
+
+  // 12. photos : rendu identique à l'ancienne version + liens des carnets (cadeaux pour les autres)
+  w = await boot({ setup: (F) => {
+    seedSession(F); const W = nid(), G = nid(); F.ids = { W, G };
+    F.db.lists.push({ id: W, owner_id: ME.id, kind: 'wishes', title: 'Mes envies', emoji: '🎀', created_at: '1' }, { id: G, owner_id: ME.id, kind: 'gifts_for', title: 'Maman', emoji: '🎁', budget: 100, created_at: '2' });
+    F.db.list_members.push({ list_id: W, user_id: ME.id, role: 'owner' }, { list_id: G, user_id: ME.id, role: 'owner' });
+    const P = (l) => l + '/' + nid() + '/' + nid() + '.jpg';
+    F.db.items.push({ id: nid(), list_id: W, name: 'Lampe', photo_path: P(W), version: 1, created_at: '3' },
+      { id: nid(), list_id: G, name: 'Avec photo', photo_path: P(G), version: 1, created_at: '4' },
+      { id: nid(), list_id: G, name: 'Écharpe', link: 'https://shop.fr/echarpe', version: 1, created_at: '5' },
+      { id: nid(), list_id: G, name: 'Gants', link: 'https://shop.fr/gants', version: 1, created_at: '6' },
+      { id: nid(), list_id: G, name: 'Sans lien', version: 1, created_at: '7' });
+    F.st.og = (b) => { if (b.image) return /gants/.test(b.image) ? { data: { error: 'http_403' }, error: null } : { data: { contentType: 'image/png', base64: 'iVBORw0KGgo=' }, error: null };
+      if (/echarpe/.test(b.url)) return { data: { title: 'Écharpe douce', image: 'https://shop.fr/echarpe.png', description: 'Douce', price: 25 }, error: null };
+      if (/gants/.test(b.url)) return { data: { title: 'Gants', image: 'https://shop.fr/gants.png' }, error: null };
+      return { data: { partial: true, title: null, image: null }, error: null }; };
+  } });
+  w.V2API.resizeImage = async (b) => b;
+  await click(w, '[data-id="mine"]'); await click(w, '.person'); await sleep(100);
+  const wimg = $(w, 'img.ph[data-photo]');
+  t('envies : ma photo s’affiche entière, comme avant (aucun recadrage forcé)', wimg && !wimg.getAttribute('style') && wimg.className === 'ph');
+  await click(w, '[data-id="mine"]'); const gl = $$(w, '.person').find((e) => /Maman/.test(e.textContent)); await click(w, gl); await sleep(100);
+  const gimg = $(w, 'img.ph[data-photo]');
+  t('carnets : photo recadrée 110 px, comme avant', gimg && /height:110px;object-fit:cover/.test(gimg.getAttribute('style') || ''));
+  t('cadeau importé avec un lien mais sans image : emplacement ✂️ (pas d’image cassée)', $$(w, '.ph').some((e) => e.tagName === 'DIV' && /✂️/.test(e.textContent)) && !$$(w, 'img.ph').some((i) => !i.dataset.photo && !i.getAttribute('src')));
+  // ouverture d'un cadeau avec lien sans photo → photo cherchée automatiquement
+  const echarpe = w.__F.db.items.find((i) => i.name === 'Écharpe');
+  await click(w, `[data-a="iedit"][data-id="${echarpe.id}"]`); await sleep(200);
+  t('cadeau avec lien sans photo : aperçu automatique à l’ouverture', /Écharpe douce/.test($(w, '#lp').textContent) && !!$(w, '#usesite') && $(w, '#usesite').checked);
+  await submit(w, $(w, '#f')); await sleep(200);
+  t('… et la photo du site est enregistrée à l’enregistrement', !!w.__F.db.items.find((i) => i.name === 'Écharpe').photo_path);
+  // ajout dans un carnet « pour les autres » avec un lien
+  await click(w, '[data-a="iadd"]'); const fg = $(w, '#f'); fg.elements.link.value = 'https://shop.fr/echarpe-bleue'; fg.elements.link.dispatchEvent(new w.Event('change')); await sleep(200);
+  t('carnet : aperçu et photo proposés comme dans Mes envies', /Écharpe douce/.test($(w, '#lp').textContent) && !!$(w, '#usesite'));
+  await submit(w, fg); await sleep(200);
+  t('carnet : photo du site enregistrée', !!w.__F.db.items.filter((i) => i.name === 'Écharpe douce')[0] && !!w.__F.db.items.find((i) => i.name === 'Écharpe douce').photo_path);
+  // action groupée
+  t('bouton « Photos des liens » avec le nombre de cadeaux concernés', /Photos des liens \(1\)/.test($(w, '#app').textContent));
+  await click(w, '[data-a="lfill"]'); await sleep(500);
+  const toastTxt = (($(w, '#toast')) || {}).textContent || '';
+  t('action groupée : le site qui refuse est signalé, sans bloquer le reste', /0 photo/.test(toastTxt) && /1 site/.test(toastTxt) && !w.__F.db.items.find((i) => i.name === 'Gants').photo_path);
+  t('action groupée : plus rien à compléter côté serveur pour les autres', w.__F.db.items.filter((i) => i.link && !i.photo_path).length === 1);
+
   // 10. déconnexion
   await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);
   t('déconnexion : retour à l’écran de connexion, copie locale effacée', !!$(w, '#authform') && !w.localStorage.getItem('noel2026_v2cache'));
