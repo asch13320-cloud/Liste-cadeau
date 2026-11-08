@@ -1,7 +1,7 @@
 {
-  "name": "Mon catalogue de Noël 2026",
-  "short_name": "Noël 2026",
-  "description": "Le petit atelier des envies — carnet de cadeaux et envies de Noël",
+  "name": "Mon catalogue d’envies",
+  "short_name": "Mes envies",
+  "description": "Le petit atelier des envies — listes d’envies et de cadeaux : Noël, anniversaire, baby shower…",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f8f0df",

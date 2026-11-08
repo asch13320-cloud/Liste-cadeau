@@ -35,6 +35,10 @@
 
   // ---- validation / nettoyage des champs avant envoi
   const PRIOS = ['love', 'like', 'maybe'], CATS = ['beauty', 'clothes', 'home', 'tech', 'leisure', 'other'], STATS = ['idea', 'wish', 'received'];
+  const OCCS = ['christmas', 'birthday', 'baby_shower', 'wedding', 'other'];
+  const occ = (v) => (OCCS.includes(v) ? v : 'christmas');
+  const day = (v) => { const x = String(v || '').trim(); if (!x) return null; if (!/^\d{4}-\d{2}-\d{2}$/.test(x) || isNaN(new Date(x + 'T12:00:00'))) throw uerr('Date invalide.'); return x; };
+  const noOccCol = (e) => e && /occasion|event_date/.test(String(e.message || '')) && /column|schema cache/i.test(String(e.message || ''));
   const safeUrl = (u) => {
     const v = String(u || '').trim();
     if (!v) return null;
@@ -146,17 +150,20 @@
     api.setName = async (uid, name) => { const r = await sb.from('profiles').update({ display_name: txt(name, 60) || '' }).eq('id', uid); if (r.error) throw r.error; };
 
     // ---------- Listes
-    api.createList = async ({ title, emoji, kind, budget }) => {
+    api.createList = async ({ title, emoji, kind, budget, occasion, eventDate }) => {
       const t = txt(title, 120); if (!t) throw uerr('Le titre est obligatoire.');
       const uid = (await sb.auth.getUser()).data.user.id;
-      const row = { owner_id: uid, title: t, emoji: txt(emoji, 16) || '🎀', kind: kind === 'gifts_for' ? 'gifts_for' : 'wishes', budget: kind === 'gifts_for' ? num(budget) : null };
-      const r = await sb.from('lists').insert(row).select().single();
+      const row = { owner_id: uid, title: t, emoji: txt(emoji, 16) || '🎀', kind: kind === 'gifts_for' ? 'gifts_for' : 'wishes', budget: kind === 'gifts_for' ? num(budget) : null, occasion: occ(occasion), event_date: day(eventDate) };
+      let r = await sb.from('lists').insert(row).select().single();
+      if (r.error && noOccCol(r.error)) { delete row.occasion; delete row.event_date; r = await sb.from('lists').insert(row).select().single(); api.needsMigration5 = true; }
       return must(r);
     };
-    api.updateList = async (id, { title, emoji, budget }) => {
+    api.updateList = async (id, { title, emoji, budget, occasion, eventDate }) => {
       const p = {}; if (title !== undefined) { p.title = txt(title, 120); if (!p.title) throw uerr('Le titre est obligatoire.'); }
       if (emoji !== undefined) p.emoji = txt(emoji, 16) || '🎀'; if (budget !== undefined) p.budget = num(budget);
-      const r = await sb.from('lists').update(p).eq('id', id).select();
+      if (occasion !== undefined) p.occasion = occ(occasion); if (eventDate !== undefined) p.event_date = day(eventDate);
+      let r = await sb.from('lists').update(p).eq('id', id).select();
+      if (r.error && noOccCol(r.error)) { delete p.occasion; delete p.event_date; api.needsMigration5 = true; r = await sb.from('lists').update(p).eq('id', id).select(); }
       if (!must(r).length) throw new Error('forbidden');
     };
     api.deleteList = async (id, paths) => {

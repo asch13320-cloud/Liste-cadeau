@@ -198,6 +198,16 @@ t('erreur d’import : indique la ligne de la fonction', e3 && /import_legacy/.t
 t('erreur d’import : code d’erreur d’origine conservé (23514)', e3 && e3.code === '23514');
 t('erreur d’import : rien n’a été importé à moitié (transaction annulée)', (await as('H', () => q("select 1 from lists where legacy_key='p:p10'"))).length === 0);
 
+
+// --- occasions (migration 5)
+const OL = (await as('A', () => q("insert into lists (owner_id,title) values ($1,'Liste occasion') returning id, occasion, event_date", [U.A])))[0];
+t('occasion : « Noël » par défaut (listes existantes comprises)', OL.occasion === 'christmas' && OL.event_date === null);
+t('occasion : le propriétaire peut la changer + date', await as('A', async () => (await q("update lists set occasion='baby_shower', event_date='2027-03-14' where id=$1 returning 1", [OL.id])).length === 1));
+t('occasion : valeur inconnue refusée', !!(await as('A', () => err(q("update lists set occasion='nimporte' where id=$1", [OL.id])))));
+t('occasion : date invalide refusée', !!(await as('A', () => err(q("update lists set event_date='pas une date' where id=$1", [OL.id])))));
+t('occasion : un lecteur/collaborateur ne la modifie pas', await (async () => { const tk = await link('A', OL.id, 'collaborator', 24, 1); await as('B', () => q('select redeem_invite($1)', [tk])); return as('B', async () => (await q("update lists set occasion='wedding' where id=$1 returning 1", [OL.id])).length === 0); })());
+t('occasion : les 5 occasions acceptées', await as('A', async () => { for (const o of ['christmas', 'birthday', 'baby_shower', 'wedding', 'other']) await q("update lists set occasion=$2 where id=$1", [OL.id, o]); return true; }));
+
 // --- suppression en cascade
 await as('A', () => q('delete from lists where id=$1', [L]));
 t('suppression de liste : cadeaux, membres, invitations supprimés', (await q('select 1 from items where list_id=$1', [L])).length + (await q('select 1 from list_members where list_id=$1', [L])).length + (await q('select 1 from invite_links where list_id=$1', [L])).length === 0);
