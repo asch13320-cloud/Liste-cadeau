@@ -5,4 +5,4 @@ window.CFG = {
   key: 'sb_publishable_kZqhq3wcXcilW7GuPJfZzA_RblOZya_',
   site: 'https://asch13320-cloud.github.io/Liste-cadeau/'
 };
-window.BUILD = '20261108b';
+window.BUILD = '20261108c';

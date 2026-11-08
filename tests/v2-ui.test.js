@@ -112,7 +112,7 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, '[data-id="reset"]'); setv($(w, '#resetform'), 'email', 'n@x.fr'); await submit(w, $(w, '#resetform'));
   t('mot de passe oublié : message neutre (ne révèle pas si le compte existe)', /Si cette adresse a un compte/.test(txt(w)) && w.__F.st.reset.e === 'n@x.fr');
   await click(w, '[data-id="in"]'); setv($(w, '#authform'), 'email', 'moi@x.fr'); setv($(w, '#authform'), 'password', 'motdepasse1'); await submit(w, $(w, '#authform')); await sleep(150);
-  t('connexion : accueil affiché avec 4 onglets et l’icône profil en haut', !!$(w, '.cover') && $$(w, '#tabs button').length === 4 && !$(w, '#me').hidden);
+  t('connexion : accueil affiché avec 3 onglets et l’icône profil en haut', !!$(w, '.cover') && $$(w, '#tabs button').length === 3 && !$(w, '#me').hidden);
 
   // 2. session existante : listes, rôles, cartes
   w = await boot({ setup: (F) => {
@@ -135,9 +135,11 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   const names = () => $$(w, '.person h4').map((x) => x.textContent);
   t('« Mes listes » : envies présentes', names().some((n) => /Mes envies/.test(n)));
   t('liste partagée avec un collaborateur : classée dans « À plusieurs »', !names().some((n) => /Maman/.test(n)));
-  await click(w, '[data-id="collab"]'); t('« À plusieurs » : liste de Maman', names().some((n) => /Maman/.test(n)));
-  await click(w, '[data-id="shared"]'); t('« Partagées avec moi » : liste de Paul, avec son prénom', names().some((n) => /Envies de Paul/.test(n)) && /de Paul/.test(txt(w)));
-  await click(w, '.person'); 
+  await click(w, '[data-id="shared"]');
+  t('onglet unique « Partagées » : listes à plusieurs ET listes en lecture seule', names().some((n) => /Maman/.test(n)) && names().some((n) => /Envies de Paul/.test(n)) && /Préparées ensemble/.test(txt(w)) && /À consulter/.test(txt(w)));
+  t('onglet « À plusieurs » supprimé (plus de doublon)', !$(w, '#tabs [data-id="collab"]') && $$(w, '#tabs button').length === 3);
+  t('« Partagées » : prénom du propriétaire visible pour la liste en lecture seule', /de Paul/.test(txt(w)));
+  await click(w, $$(w, '.person').find((e) => /Envies de Paul/.test(e.textContent))); 
   t('lecteur : bandeau lecture seule', /Lecture seule/.test(txt(w)));
   t('lecteur : AUCUN bouton de modification', !$(w, '[data-a="iadd"]') && !$(w, '[data-a="iedit"]') && !$(w, '[data-a="idel"]') && !$(w, '[data-a="ibuy"]') && !$(w, '[data-a="ledit"]') && !$(w, '[data-a="ldel"]') && !$(w, '[data-a="lshare"]') && !$(w, '[data-a="ifav"]'));
   t('lecteur : peut quitter la liste', !!$(w, '[data-a="lleave"]'));
@@ -171,7 +173,7 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, '#dlg [data-i="0"]'); await sleep(50); t('suppression confirmée', !w.__F.db.items.includes(target));
 
   // 4. carnet de cadeaux : trouvé / emballé / budget
-  await click(w, '[data-id="collab"]'); await click(w, '.person');
+  await click(w, '[data-id="shared"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent)));
   const g = w.__F.db.items.find((i) => i.name === 'Écharpe');
   t('lien javascript: jamais rendu en lien cliquable', !$$(w, 'a').some((a) => /javascript:/i.test(a.getAttribute('href') || '')));
   await click(w, `[data-a="iwrap"][data-id="${g.id}"]`); t('emballé basculé', g.wrapped === true);
@@ -189,7 +191,7 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, '[data-rev]'); await sleep(100);
   t('révocation : lien marqué révoqué', w.__F.db.invite_links[0].revoked_at !== null);
   await click(w, '[data-close]');
-  await click(w, '[data-id="collab"]'); await click(w, '.person'); await click(w, '[data-a="lshare"]');
+  await click(w, '[data-id="shared"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent))); await click(w, '[data-a="lshare"]');
   t('liste de cadeaux : pas de lien sans compte proposé', !$(w, '#dlg [name="anon"]'));
   await click(w, '[data-close]');
 

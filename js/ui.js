@@ -278,20 +278,21 @@
   }
 
   function viewLists(kind) {
-    const L = D.lists.filter((l) => (kind === 'mine' ? l.role === 'owner' : kind === 'collab' ? isCollab(l) : l.role === 'reader'));
+    const L = D.lists.filter((l) => l.role === 'owner');
     if (kind === 'mine') {
       const mine = L.filter((l) => !isCollab(l));
       return `<div class="section-head"><div><div class="small-label">Mes carnets à moi</div><h2>Mes listes 🎀</h2></div><span class="paper-note">${mine.length} ${plural(mine.length, 'liste', 'listes')}</span></div>
       <p class="intro">Mes envies, et mes carnets de cadeaux pour les autres.</p>${btn('lnew', 0, '＋ Créer une liste', 'pri')}<div style="margin-top:14px">${mine.map(listCard).join('') || '<p class="empty">Crée ta première liste. ✨</p>'}</div>`;
     }
-    if (kind === 'collab') {
-      return `<div class="section-head"><div><div class="small-label">À plusieurs, c'est mieux</div><h2>Listes collaboratives 🤝</h2></div><span class="paper-note">${L.length}</span></div>
-      <p class="intro">Préparez ensemble les cadeaux de quelqu'un : tout le monde ajoute, modifie et coche en direct.</p>
-      <div class="acts" style="margin-bottom:14px">${btn('lnewc', 0, '＋ Nouvelle liste collaborative', 'pri')}${btn('ljoin', 0, '🔗 Rejoindre avec un lien')}</div>${L.map(listCard).join('') || '<p class="empty">Aucune liste collaborative pour l’instant.</p>'}`;
-    }
-    return `<div class="section-head"><div><div class="small-label">Les listes des autres</div><h2>Partagées avec moi 💌</h2></div><span class="paper-note">${L.length}</span></div>
-      <p class="intro">Tu peux les consulter, mais pas les modifier. Elles se mettent à jour toutes seules.</p>
-      <div class="acts" style="margin-bottom:14px">${btn('ljoin', 0, '🔗 Ouvrir un lien reçu')}</div>${L.map(listCard).join('') || '<p class="empty">Personne n’a encore partagé de liste avec toi.</p>'}`;
+    // Onglet « Partagées » : ce que je prépare avec d'autres + ce que je peux seulement consulter
+    const together = D.lists.filter(isCollab), readOnly = D.lists.filter((l) => l.role === 'reader');
+    return `<div class="section-head"><div><div class="small-label">Avec les autres</div><h2>Partagées 🤝</h2></div><span class="paper-note">${together.length + readOnly.length}</span></div>
+      <p class="intro">Les listes que tu prépares avec quelqu'un, et celles qu'on a partagées avec toi.</p>
+      <div class="acts" style="margin-bottom:14px">${btn('lnewc', 0, '＋ Nouvelle liste à plusieurs', 'pri')}${btn('ljoin', 0, '🔗 Rejoindre avec un lien')}</div>
+      <div class="section-head"><h2>Préparées ensemble</h2><span class="paper-note">On modifie tous</span></div>
+      ${together.map(listCard).join('') || '<p class="empty">Aucune liste à plusieurs pour l’instant.</p>'}
+      <div class="section-head"><h2>À consulter</h2><span class="paper-note">Lecture seule, mise à jour en direct</span></div>
+      ${readOnly.map(listCard).join('') || '<p class="empty">Personne n’a encore partagé de liste avec toi.</p>'}`;
   }
 
   function viewDetail() {
@@ -300,7 +301,7 @@
     const filters = w ? [['all', 'Tout'], ['idea', 'Idée'], ['wish', 'Envie'], ['received', 'Reçu']] : [['all', 'Tout'], ['todo', 'À trouver'], ['bought', 'Trouvés'], ['wrapped', 'Emballés']];
     const shown = all.filter((i) => F === 'all' || (w ? i.status === F : F === 'todo' ? !i.bought : F === 'bought' ? i.bought : i.wrapped));
     const sp = sum(all.map((i) => i.spent)), pc = has(l.budget) && +l.budget ? Math.min(100, (sp / l.budget) * 100) : 0;
-    const back = l.role === 'reader' ? 'shared' : isCollab(l) ? 'collab' : 'mine';
+    const back = l.role === 'reader' || isCollab(l) ? 'shared' : 'mine';
     return `<button class="ghost" data-a="tab" data-id="${back}">← Retour</button>
     <div class="section-head"><div><div class="small-label">${w ? 'Liste d’envies' : 'Le carnet de'}</div><h2>${esc(l.emoji)} ${esc(l.title)}</h2></div><span class="paper-note">${ROLE[l.role]}</span></div>
     ${l.role === 'reader' ? '<p class="banner">👀 Lecture seule : tu vois cette liste en direct, mais tu ne peux pas la modifier.</p>' : ''}
@@ -367,7 +368,7 @@
   }
 
   // ------------------------------------------------------------------ rendu
-  const TABS = [['home', '🏠', 'Atelier'], ['mine', '🎀', 'Mes listes'], ['collab', '🤝', 'À plusieurs'], ['shared', '💌', 'Partagées']];
+  const TABS = [['home', '🏠', 'Atelier'], ['mine', '🎀', 'Mes listes'], ['shared', '🤝', 'Partagées']];
   function render() {
     const app = $('#app'), tabs = $('#tabs'), me = $('#me');
     me.hidden = true; syncChip();
@@ -375,10 +376,10 @@
     if (S.recovery) { app.innerHTML = viewRecovery(); tabs.hidden = true; return; }
     if (S.loading && !S.user) { app.innerHTML = '<p class="empty">Chargement…</p>'; tabs.hidden = true; return; }
     if (!S.user || !D) { app.innerHTML = viewAuth(); tabs.hidden = true; return; }
-    const v = { home: viewHome, vrac: viewVrac, mine: () => viewLists('mine'), collab: () => viewLists('collab'), shared: () => viewLists('shared'), detail: viewDetail, profile: viewProfile }[S.tab] || viewHome;
+    const v = { home: viewHome, vrac: viewVrac, mine: () => viewLists('mine'), shared: () => viewLists('shared'), detail: viewDetail, profile: viewProfile }[S.tab] || viewHome;
     app.innerHTML = (S.offline || S.cached ? '<p class="banner">⚠️ Hors-ligne : tu vois la dernière version enregistrée. Les modifications sont désactivées tant que la connexion n’est pas revenue.</p>' : '') + v();
     tabs.hidden = false; me.hidden = false; me.classList.toggle('on', S.tab === 'profile'); me.setAttribute('aria-pressed', S.tab === 'profile');
-    const active = S.tab === 'detail' ? (list(S.lid) ? (list(S.lid).role === 'reader' ? 'shared' : isCollab(list(S.lid)) ? 'collab' : 'mine') : 'mine') : S.tab === 'vrac' ? 'home' : S.tab;
+    const active = S.tab === 'detail' ? (list(S.lid) ? (list(S.lid).role === 'reader' || isCollab(list(S.lid)) ? 'shared' : 'mine') : 'mine') : S.tab === 'vrac' ? 'home' : S.tab;
     tabs.innerHTML = TABS.map((t) => `<button class="${active === t[0] ? 'on' : ''}" data-a="tab" data-id="${t[0]}"><span>${t[1]}</span>${t[2]}</button>`).join('');
     hydratePhotos();
   }
