@@ -63,6 +63,7 @@ function fakeSb(opts = {}) {
       },
       signUp: async ({ email, options }) => { st.signup = { email, options }; return { data: { session: null, user: { id: nid() } }, error: null }; },
       signOut: async () => { st.session = null; setTimeout(() => st.listeners.forEach((l) => l('SIGNED_OUT', null)), 0); return { error: null }; },
+      resend: async (a) => { st.resent = a; return { error: null }; },
       resetPasswordForEmail: async (e, o) => { st.reset = { e, o }; return { error: null }; }, updateUser: async (p) => { st.pw = p; return { error: null }; }
     },
     from,
@@ -98,13 +99,16 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
 (async () => {
   // 1. sans session : écran de connexion, erreurs lisibles
   let w = await boot();
-  t('sans session : écran de connexion, pas d’icône profil', !!$(w, '#authform') && /Retrouver mes listes/.test(txt(w)) && $(w, '#tabs').hidden && $(w, '#me').hidden);
+  t('sans session : écran de connexion, pas d’icône profil', !!$(w, '#authform') && /Bon retour/.test(txt(w)) && $(w, '#tabs').hidden && $(w, '#me').hidden);
   setv($(w, '#authform'), 'email', 'a@x.fr'); setv($(w, '#authform'), 'password', 'mauvais'); await submit(w, $(w, '#authform'));
   t('mauvais mot de passe : message clair', /E-mail ou mot de passe incorrect/.test($(w, '#aerr').textContent));
   await click(w, '[data-id="up"]'); setv($(w, '#authform'), 'email', 'n@x.fr'); setv($(w, '#authform'), 'password', 'court'); await submit(w, $(w, '#authform'));
-  t('inscription : mot de passe trop court refusé côté client', /8 caractères/.test($(w, '#aerr').textContent) && !w.__F.st.signup);
-  setv($(w, '#authform'), 'password', 'longmotdepasse'); setv($(w, '#authform'), 'name', 'Nina'); await submit(w, $(w, '#authform'));
-  t('inscription : e-mail de confirmation annoncé, prénom transmis', /Vérifie ta boîte mail/.test(txt(w)) && w.__F.st.signup.options.data.display_name === 'Nina' && w.__F.st.signup.options.emailRedirectTo === 'https://asch13320-cloud.github.io/Liste-cadeau/');
+  t('inscription : mot de passe trop court refusé côté client', /6 caractères/.test($(w, '#aerr').textContent) && !w.__F.st.signup);
+  t('inscription : seulement 2 champs (e-mail, mot de passe)', $$(w, '#authform input').length === 2);
+  await click(w, '[data-a="eye"]'); t('œil : affiche le mot de passe', $(w, '#authform [name="password"]').type === 'text'); await click(w, '[data-a="eye"]'); t('œil : le recache', $(w, '#authform [name="password"]').type === 'password');
+  setv($(w, '#authform'), 'password', 'longmotdepasse'); await submit(w, $(w, '#authform'));
+  t('inscription : e-mail de confirmation annoncé, rien d’autre à remplir', /lien de confirmation/.test(txt(w)) && w.__F.st.signup.options.data.display_name === '' && w.__F.st.signup.options.emailRedirectTo === 'https://asch13320-cloud.github.io/Liste-cadeau/');
+  await click(w, '[data-a="resend"]'); t('e-mail de confirmation renvoyable', w.__F.st.resent && w.__F.st.resent.email === 'n@x.fr' && w.__F.st.resent.type === 'signup');
   await click(w, '[data-id="reset"]'); setv($(w, '#resetform'), 'email', 'n@x.fr'); await submit(w, $(w, '#resetform'));
   t('mot de passe oublié : message neutre (ne révèle pas si le compte existe)', /Si cette adresse a un compte/.test(txt(w)) && w.__F.st.reset.e === 'n@x.fr');
   await click(w, '[data-id="in"]'); setv($(w, '#authform'), 'email', 'moi@x.fr'); setv($(w, '#authform'), 'password', 'motdepasse1'); await submit(w, $(w, '#authform')); await sleep(150);
@@ -260,6 +264,41 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, '[data-id="mine"]'); await click(w, '#me');
   t('icône profil : ouvre le profil, bouton actif', /Profil/.test($(w, '#app').textContent) && $(w, '#me').classList.contains('on') && !$(w, '#tabs .on'));
   await click(w, '#me'); t('icône profil : 2e appui → accueil', !!$(w, '.cover') && !$(w, '#me').classList.contains('on'));
+
+
+  // 11. premiers pas d'un compte vide + photo du site + création de liste simplifiée
+  w = await boot({ setup: (F) => { F.st.session = { user: ME }; F.db.profiles.push({ id: ME.id, display_name: '' }); } });
+  t('compte vide : « Par où commencer ? »', /Par où commencer/.test(txt(w)) && !!$(w, '[data-a="start"][data-id="wish"]'));
+  t('compte vide : prénom demandé, facultatif', !!$(w, '#nameform') && /Plus tard/.test(txt(w)));
+  await click(w, '[data-a="later"]'); t('« Plus tard » masque la question', !$(w, '#nameform'));
+  w.V2API.resizeImage = async (b) => b;
+  w.__F.st.og = (b) => (b.image ? { data: { contentType: 'image/png', base64: 'iVBORw0KGgo=' }, error: null } : { data: { title: 'Lampe belle', image: 'https://shop.fr/i.png', description: 'Une lampe', price: 29.9, currency: 'EUR' }, error: null });
+  await click(w, '[data-a="start"][data-id="wish"]');
+  t('« Noter mes envies » : liste créée toute seule, formulaire ouvert', w.__F.db.lists.length === 1 && w.__F.db.lists[0].title === 'Mes envies' && $(w, '#dlg').open && !!$(w, '#f_name'));
+  t('formulaire : l’essentiel visible, détails repliés', !!$(w, 'details.more') && !$(w, 'details.more').open && !$(w, '#f_name').closest('details') && !!$(w, '#f_photo') && !$(w, '#f_photo').closest('details'));
+  const fl = $(w, '#f'); fl.elements.link.value = 'https://shop.fr/lampe'; fl.elements.link.dispatchEvent(new w.Event('change')); await sleep(150);
+  t('lien collé : aperçu, titre pré-rempli', /Lampe belle/.test($(w, '#lp').textContent) && fl.elements.name.value === 'Lampe belle');
+  t('lien collé : « Garder la photo du site » coché par défaut', !!$(w, '#usesite') && $(w, '#usesite').checked);
+  await submit(w, fl); await sleep(150);
+  const lamp = w.__F.db.items.find((i) => i.name === 'Lampe belle');
+  t('photo du site enregistrée comme VRAIE photo (Storage)', lamp && /^[0-9a-f-]{36}\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.jpg$/.test(lamp.photo_path || '') && w.__F.st.uploads.length === 1);
+  t('photo du site : lien d’origine conservé en secours', lamp.link_image === 'https://shop.fr/i.png' && lamp.link === 'https://shop.fr/lampe');
+  await sleep(100); t('carte : la photo enregistrée est affichée (lien signé)', !!$(w, 'img[data-photo]') && /signed\.example/.test($(w, 'img[data-photo]').getAttribute('src') || ''));
+  // le site bloque la photo : le cadeau est quand même créé
+  w.__F.st.og = (b) => (b.image ? { data: { error: 'http_403' }, error: null } : { data: { title: 'Bougie', image: 'https://shop.fr/b.png', price: null }, error: null });
+  await click(w, '[data-a="iadd"]'); const f4 = $(w, '#f'); f4.elements.link.value = 'https://shop.fr/bougie'; f4.elements.link.dispatchEvent(new w.Event('change')); await sleep(150); await submit(w, f4); await sleep(150);
+  const bg = w.__F.db.items.find((i) => i.name === 'Bougie');
+  t('photo du site bloquée : cadeau créé quand même, affichage de secours', bg && !bg.photo_path && bg.link_image === 'https://shop.fr/b.png' && !$(w, '#dlg').open);
+  // fonction non déployée : saisie manuelle proposée
+  w.__F.st.og = null; await click(w, '[data-a="iadd"]'); const f5 = $(w, '#f'); f5.elements.link.value = 'https://shop.fr/x'; f5.elements.link.dispatchEvent(new w.Event('change')); await sleep(150);
+  t('aperçu indisponible : message clair, saisie manuelle possible', /Aperçu automatique impossible/.test($(w, '#lp').textContent)); await click(w, '[data-close]');
+  // création de liste simplifiée
+  await click(w, '[data-id="mine"]'); await click(w, '[data-a="lnew"]');
+  t('« Créer une liste » : choix du type en 2 gros boutons', /Que veux-tu créer/.test($(w, '#dlg').textContent) && $$(w, '#dlg [data-i]').length === 2);
+  await click(w, '#dlg [data-i="1"]'); const fl2 = $(w, '#f');
+  t('carnet de cadeaux : 3 champs seulement (qui, budget, emoji)', fl2.querySelectorAll('input:not([type=hidden])').length === 3 && /Pour qui/.test(fl2.textContent));
+  setv(fl2, 'title', 'Papa'); await submit(w, fl2); await sleep(120);
+  t('carnet créé et ouvert', w.__F.db.lists.some((l) => l.title === 'Papa' && l.kind === 'gifts_for') && /Papa/.test($(w, '#app').textContent));
 
   // 10. déconnexion
   await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);

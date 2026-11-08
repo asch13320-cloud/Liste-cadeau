@@ -32,3 +32,8 @@ header{padding-top:34px}
 .me.on{opacity:1;background:var(--paper2);border-color:var(--ink);color:var(--ink)}
 .me[hidden]{display:none}
 .sync{right:auto;left:20px;top:9px;bottom:auto}
+
+.pw{display:flex;gap:6px;align-items:stretch}.pw input{flex:1;min-width:0}
+.eye{border:2px solid var(--ink);background:var(--paper2);border-radius:3px;padding:0 10px;font-size:16px}
+details.more{margin:6px 0;border:1.5px dashed var(--ink);border-radius:3px;padding:8px 10px;background:var(--paper)}
+details.more summary{cursor:pointer;font:700 14px var(--font);padding:2px 0}

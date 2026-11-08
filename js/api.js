@@ -24,7 +24,7 @@
     if (/Failed to fetch|NetworkError|Load failed|network/i.test(m)) return 'Connexion impossible. Vérifie ton réseau puis réessaie.';
     if (/Invalid login credentials/i.test(m)) return 'E-mail ou mot de passe incorrect.';
     if (/Email not confirmed/i.test(m)) return 'Ton adresse e-mail n’est pas encore confirmée : ouvre l’e-mail de confirmation reçu.';
-    if (/password.*(at least|short|weak)|Password should/i.test(m)) return 'Mot de passe trop faible (8 caractères minimum).';
+    if (/password.*(at least|short|weak)|Password should/i.test(m)) { const n = /at least (\d+)/i.exec(m); return 'Mot de passe trop court (' + (n ? n[1] : 6) + ' caractères minimum).'; }
     if (/rate limit|too many/i.test(m)) return 'Trop de tentatives. Patiente quelques minutes.';
     if (/row-level security|permission denied/i.test(m)) return 'Tu n’as pas les droits pour faire ça.';
     return 'Une erreur est survenue : ' + m.slice(0, 140);
@@ -114,6 +114,7 @@
     api.getSession = async () => (await sb.auth.getSession()).data.session;
     api.signUp = async (email, password, name) => must(await sb.auth.signUp({ email, password, options: { data: { display_name: txt(name, 60) || '' }, emailRedirectTo: cfg.site } }));
     api.signIn = async (email, password) => must(await sb.auth.signInWithPassword({ email, password }));
+    api.resend = async (email) => { const r = await sb.auth.resend({ type: 'signup', email, options: { emailRedirectTo: cfg.site } }); if (r.error) throw r.error; };
     api.signOut = async () => { const r = await sb.auth.signOut(); if (r.error) throw r.error; };
     api.resetPassword = async (email) => { const r = await sb.auth.resetPasswordForEmail(email, { redirectTo: cfg.site }); if (r.error) throw r.error; };
     api.setPassword = async (pw) => { const r = await sb.auth.updateUser({ password: pw }); if (r.error) throw r.error; };
@@ -215,6 +216,15 @@
         if (r.error || !r.data || r.data.error) return null;
         return r.data;
       } catch (e) { return null; }
+    };
+
+    // Photo du produit : téléchargée par la fonction serveur (les sites bloquent souvent l'affichage direct)
+    api.fetchLinkImage = async (url) => {
+      const r = await sb.functions.invoke('fetch-og', { body: { image: safeUrl(url) } });
+      if (r.error || !r.data || r.data.error || !r.data.base64) throw uerr('Photo du site indisponible.');
+      const bin = atob(r.data.base64), a = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+      return new Blob([a], { type: r.data.contentType || 'image/jpeg' });
     };
 
     // ---------- Membres et invitations

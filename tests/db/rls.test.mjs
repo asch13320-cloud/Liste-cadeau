@@ -179,6 +179,25 @@ t('import : refuse un payload invalide', !!(await as('H', () => err(q("select im
 t('import : refusé hors connexion', !!(await anon(() => err(q("select import_legacy('{}'::jsonb)")))));
 t('import : payload vide accepté', (await as('G', () => q("select import_legacy('{}'::jsonb) r")))[0].r.items_created === 0);
 
+
+// --- import tolérant + erreurs détaillées (migration 4)
+const imp = (u, payload) => as(u, () => q('select import_legacy($1::jsonb) r', [JSON.stringify(payload)]));
+const rA = (await imp('H', { wishes: [{ id: 'z1', name: 'Booléens bizarres', fav: '', price: 25, prio: 'J’adorerais' }, null, 'texte', { name: 'Sans id' }], people: [{ id: 'pz', name: 'lili', emoji: 'lili', gifts: 'pas un tableau' }, { name: 'Sans id non plus', gifts: [{ name: 'g sans id', bought: 'on', wrapped: null }] }], inbox: [{ t: 'idée sans id' }, 5] }))[0].r;
+t('import tolérant : booléen vide, null, texte, id manquant, gifts invalide → pas d’erreur', rA.items_created === 3 && rA.lists_created >= 1);
+const same = { wishes: [{ id: 'z1', name: 'Booléens bizarres', fav: '', price: 25, prio: 'J’adorerais' }, null, 'texte', { name: 'Sans id' }], people: [{ id: 'pz', name: 'lili', emoji: 'lili', gifts: 'pas un tableau' }, { name: 'Sans id non plus', gifts: [{ name: 'g sans id', bought: 'on', wrapped: null }] }], inbox: [{ t: 'idée sans id' }, 5] };
+const rB = (await imp('H', same))[0].r;
+t('import tolérant : relance sans doublon, même sans id (clé par position)', rB.items_created === 0 && rB.lists_created === 0 && rB.inbox_created === 0);
+t('import tolérant : « lili » comme nom ou emoji est un simple texte', (await as('H', () => q("select 1 from lists where title='lili'"))).length === 1);
+await q("alter table items add constraint t_fail check (name <> 'Cadeau piège') not valid");
+const e3 = await as('H', async () => { try { await q('select import_legacy($1::jsonb)', [JSON.stringify({ wishes: [], people: [{ id: 'p10', name: 'Carnet X', gifts: [{ id: 'g10', name: 'Cadeau piège' }] }], inbox: [] })]); return null; } catch (e) { return e; } });
+await q('alter table items drop constraint t_fail');
+if (!e3 || !/Cadeau piège/.test(e3.detail || '')) console.log('DEBUG e3:', e3 && { m: e3.message, d: e3.detail, h: e3.hint, c: e3.code });
+t('erreur d’import : message d’origine conservé', e3 && /violates check constraint/.test(e3.message));
+t('erreur d’import : indique le cadeau et le carnet fautifs', e3 && /Cadeau piège/.test(e3.detail || '') && /Carnet X/.test(e3.detail || ''));
+t('erreur d’import : indique la ligne de la fonction', e3 && /import_legacy/.test(e3.hint || ''));
+t('erreur d’import : code d’erreur d’origine conservé (23514)', e3 && e3.code === '23514');
+t('erreur d’import : rien n’a été importé à moitié (transaction annulée)', (await as('H', () => q("select 1 from lists where legacy_key='p:p10'"))).length === 0);
+
 // --- suppression en cascade
 await as('A', () => q('delete from lists where id=$1', [L]));
 t('suppression de liste : cadeaux, membres, invitations supprimés', (await q('select 1 from items where list_id=$1', [L])).length + (await q('select 1 from list_members where list_id=$1', [L])).length + (await q('select 1 from invite_links where list_id=$1', [L])).length === 0);
