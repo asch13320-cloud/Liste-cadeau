@@ -254,6 +254,8 @@
     const bud = sum(gl.map((l) => l.budget)), sp = sum(gi.map((i) => i.spent));
     const myW = D.lists.filter((l) => l.kind === 'wishes' && l.role === 'owner');
     return `<section class="cover"><div class="cover-copy"><div class="edition">Édition spéciale · Hiver 2026</div><h2>La magie<br>des envies.</h2><p>Un petit carnet de choses qui me feraient plaisir…</p></div><div class="cover-stamp">100%<br>envies<br> choisies</div><div class="cover-art">🎄</div></section>
+    ${!D.me.name && !localStorage.getItem('noel_nameasked') ? `<form id="nameform" class="card"><div class="small-label">Pour tes proches (facultatif)</div><h4>Comment t’appelles-tu ?</h4><p class="note">Ton prénom s’affiche pour les personnes avec qui tu partages une liste.</p><div class="qa"><input name="name" maxlength="60" placeholder="Ton prénom" aria-label="Prénom"><button class="pri">OK</button></div><button type="button" class="ghost" data-a="later">Plus tard</button></form>` : ''}
+    ${!D.lists.length ? `<div class="card"><div class="small-label">Bienvenue 🎄</div><h4>Par où commencer ?</h4><div class="acts" style="flex-direction:column;align-items:stretch">${btn('start', 'wish', '🎀 Noter mes envies', 'pri')}${btn('start', 'gift', '🎁 Préparer des cadeaux pour quelqu’un')}${legacyData() ? btn('tab', 'profile', '📦 Récupérer mon ancienne version') : ''}</div></div>` : ''}
     <form id="qa" class="qa"><input name="q" placeholder="Une idée à découper et garder…" aria-label="Idée en vrac" maxlength="1000"><button class="pri">Coller ✂</button></form>
     <div class="section-head"><h2>Dans mon atelier</h2><span class="paper-note">Le compte à rebours est lancé</span></div>
     <div class="stats"><div class="stat"><b>${gl.length}</b><span>carnets</span></div><div class="stat"><b>${gi.length}</b><span>cadeaux notés</span></div><div class="stat"><b>${sum(myW.map((l) => itemsOf(l.id).length))}</b><span>mes envies</span></div>
@@ -318,7 +320,7 @@
     return `<div class="section-head"><div><div class="small-label">Mon compte</div><h2>Profil 👤</h2></div></div>
     <div class="card"><div class="small-label">Connectée avec</div><h4>${esc(D.me.email)}</h4>
       <form id="nameform" class="qa" style="margin-top:10px"><input name="name" value="${esc(D.me.name)}" placeholder="Mon prénom (vu par les membres)" maxlength="60" aria-label="Prénom"><button class="pri">Enregistrer</button></form></div>
-    <div class="card"><h4>Changer mon mot de passe</h4><form id="pwform" class="qa" style="margin-top:8px"><input name="pw" type="password" minlength="8" autocomplete="new-password" placeholder="Nouveau mot de passe (8+ caractères)" aria-label="Nouveau mot de passe"><button class="pri">Changer</button></form></div>
+    <div class="card"><h4>Changer mon mot de passe</h4><form id="pwform" class="qa" style="margin-top:8px"><input name="pw" type="password" minlength="6" autocomplete="new-password" placeholder="Nouveau mot de passe (6+ caractères)" aria-label="Nouveau mot de passe"><button class="pri">Changer</button></form></div>
     <div class="section-head"><h2>Mes données 💾</h2></div>
     <div class="card"><p class="note">Une copie de toutes tes listes, à garder si tu veux.</p><div class="acts">${btn('cexport', 0, '⬇ Exporter mes listes (JSON)', 'on')}${btn('ccopy', 0, '📋 Copier')}</div></div>
     <div class="section-head"><h2>Mon ancienne version 📦</h2></div>
@@ -333,20 +335,19 @@
 
   // ------------------------------------------------------------------ écrans sans compte
   function viewAuth() {
-    const m = S.authMode;
-    return `<div class="auth"><div class="seg"><button class="${m === 'in' ? 'on' : ''}" data-a="amode" data-id="in">Connexion</button><button class="${m === 'up' ? 'on' : ''}" data-a="amode" data-id="up">Créer un compte</button></div>
-    ${S.notice ? `<p class="banner">${esc(S.notice)}</p>` : ''}
+    const m = S.authMode, up = m === 'up';
+    return `<div class="auth"><div class="seg"><button class="${m === 'in' ? 'on' : ''}" data-a="amode" data-id="in">Connexion</button><button class="${up ? 'on' : ''}" data-a="amode" data-id="up">Créer un compte</button></div>
+    ${S.notice ? `<p class="banner">${esc(S.notice)}</p>${S.resend ? btn('resend', 0, '✉ Renvoyer l’e-mail de confirmation', 'ghost') : ''}` : ''}
     ${m === 'reset' ? `<form id="resetform" novalidate><h3 style="margin:0">Mot de passe oublié</h3><label>Adresse e-mail<input name="email" type="email" autocomplete="email" required></label><p class="err" id="aerr"></p><button class="pri">Recevoir un lien</button><button type="button" class="ghost" data-a="amode" data-id="in">← Retour</button></form>`
-      : `<form id="authform" novalidate data-mode="${m}"><h3 style="margin:0">${m === 'in' ? 'Retrouver mes listes' : 'Créer mon compte'}</h3>
-      ${m === 'up' ? '<label>Prénom (vu par les personnes avec qui tu partages)<input name="name" maxlength="60" autocomplete="given-name"></label>' : ''}
+      : `<form id="authform" novalidate data-mode="${m}"><h3 style="margin:0">${up ? 'Bienvenue 🎄' : 'Bon retour 👋'}</h3>${up ? '<p class="sub" style="margin:0">Deux champs, c’est tout.</p>' : ''}
       <label>Adresse e-mail<input name="email" type="email" autocomplete="email" required></label>
-      <label>Mot de passe${m === 'up' ? ' (8 caractères minimum)' : ''}<input name="password" type="password" minlength="8" autocomplete="${m === 'in' ? 'current-password' : 'new-password'}" required></label>
-      <p class="err" id="aerr" role="alert"></p><button class="pri">${m === 'in' ? 'Me connecter' : 'Créer mon compte'}</button>
-      ${m === 'in' ? '<button type="button" class="ghost" data-a="amode" data-id="reset">Mot de passe oublié ?</button>' : ''}</form>`}
+      <label>Mot de passe${up ? ' (6 caractères minimum)' : ''}<span class="pw"><input name="password" type="password" minlength="6" autocomplete="${up ? 'new-password' : 'current-password'}" required><button type="button" class="eye" data-a="eye" aria-label="Afficher ou cacher le mot de passe">👁</button></span></label>
+      <p class="err" id="aerr" role="alert"></p><button class="pri">${up ? 'Créer mon compte' : 'Me connecter'}</button>
+      ${up ? '' : '<button type="button" class="ghost" data-a="amode" data-id="reset">Mot de passe oublié ?</button>'}</form>`}
     <p class="note" style="text-align:center;margin-top:16px">Tes anciennes données (sur cet appareil) ne sont pas perdues.<br><a href="local.html">Ouvrir l’ancienne version sans compte</a></p></div>`;
   }
   function viewRecovery() {
-    return `<div class="auth"><form id="recform" novalidate><h3 style="margin:0">Nouveau mot de passe</h3><label>Mot de passe (8 caractères minimum)<input name="pw" type="password" minlength="8" autocomplete="new-password" required></label><p class="err" id="aerr" role="alert"></p><button class="pri">Enregistrer</button></form></div>`;
+    return `<div class="auth"><form id="recform" novalidate><h3 style="margin:0">Nouveau mot de passe</h3><label>Mot de passe (6 caractères minimum)<input name="pw" type="password" minlength="6" autocomplete="new-password" required></label><p class="err" id="aerr" role="alert"></p><button class="pri">Enregistrer</button></form></div>`;
   }
   function viewPublic() {
     const p = S.pub, d = p.data;
@@ -380,24 +381,22 @@
   }
 
   // ------------------------------------------------------------------ formulaires
-  function listForm(l, forceKind) {
-    const edit = !!l;
+  function listForm(l, mode) {
+    const edit = !!l, gifts = edit ? l.kind === 'gifts_for' : mode !== 'wishes';
     return form({
-      title: edit ? 'Modifier la liste' : forceKind === 'collab' ? 'Nouvelle liste collaborative 🤝' : 'Nouvelle liste 🎀',
-      sub: edit || forceKind ? '' : 'Une liste d’envies se partage ; un carnet de cadeaux reste secret (partagé seulement avec ceux que tu invites).',
+      title: edit ? 'Modifier la liste' : mode === 'wishes' ? 'Mes envies 🎀' : mode === 'collab' ? 'Liste collaborative 🤝' : 'Un carnet de cadeaux 🎁',
+      sub: edit ? '' : gifts ? 'Pour qui prépares-tu des cadeaux ? Le carnet reste secret.' : 'Une liste d’envies, que tu pourras partager avec ta famille.',
+      submit: edit ? 'Enregistrer' : 'Créer',
       fields: [
-        { k: 'title', l: 'Titre', v: l ? l.title : '', r: 1, max: 120, ph: forceKind ? 'Cadeaux de Maman' : '' },
-        { k: 'emoji', l: 'Emoji', v: l ? l.emoji : '🎀', max: 16 },
-        ...(edit ? [] : forceKind ? [] : [{ k: 'kind', l: 'Type', t: 'sel', v: 'wishes', o: [['wishes', 'Mes envies (que je pourrai partager)'], ['gifts_for', 'Cadeaux pour quelqu’un (secret)']] }]),
-        ...(!edit || l.kind === 'gifts_for' ? [{ k: 'budget', l: 'Budget prévu (€) — carnet de cadeaux seulement', t: 'number', v: l ? l.budget : '' }] : [])
+        { k: 'title', l: gifts ? 'Pour qui ?' : 'Titre', v: l ? l.title : mode === 'wishes' ? 'Mes envies' : '', r: 1, max: 120, ph: gifts ? 'Maman, Paul…' : '' },
+        ...(gifts ? [{ k: 'budget', l: 'Budget (facultatif, en €)', t: 'number', v: l ? l.budget : '' }] : []),
+        { k: 'emoji', l: 'Emoji (facultatif)', v: l ? l.emoji : gifts ? '🎁' : '🎀', max: 16 }
       ],
       onSubmit: async (o) => {
         if (edit) { await api.updateList(l.id, { title: o.title, emoji: o.emoji, ...(l.kind === 'gifts_for' ? { budget: o.budget } : {}) }); await refresh(true); return; }
-        const kind = forceKind ? 'gifts_for' : o.kind;
-        const nl = await api.createList({ title: o.title, emoji: o.emoji, kind, budget: o.budget });
+        const nl = await api.createList({ title: o.title, emoji: o.emoji, kind: gifts ? 'gifts_for' : 'wishes', budget: o.budget });
         await refresh(true); S.tab = 'detail'; S.lid = nl.id; S.filter = 'all'; render();
-        if (forceKind) setTimeout(() => openShare(nl.id), 100);
-        return;
+        if (mode === 'collab') setTimeout(() => openShare(nl.id), 100);
       }
     });
   }
@@ -408,15 +407,17 @@
     return form({
       title: edit ? 'Modifier ' + (w ? 'l’envie' : 'le cadeau') : w ? 'Nouvelle envie 🎀' : 'Nouveau cadeau pour ' + esc(l.title),
       fields: [
-        { k: 'link', l: 'Lien du produit (facultatif)', t: 'url', v: it ? it.link : '', ph: 'https://…', ac: 'url' },
+        { k: 'link', l: 'Colle un lien (facultatif) — je cherche le titre et la photo', t: 'url', v: it ? it.link : '', ph: 'https://…', ac: 'url' },
         { t: 'html', html: '<div id="lp"></div>' },
         { k: 'name', l: 'Cadeau', v: it ? it.name : '', r: 1, max: 200 },
         { k: 'est_price', l: 'Prix (€)', t: 'number', v: it ? it.est_price : '' },
+        { k: 'photo', l: 'Photo (téléphone ou ordinateur)', t: 'photo', has: !!(it && it.photo_path) },
+        { t: 'html', html: `<details class="more" ${edit ? 'open' : ''}><summary>Plus de détails (${w ? 'priorité, catégorie, ' : 'dépensé, '}notes…)</summary>` },
         ...(w ? [{ k: 'priority', l: 'Priorité', t: 'sel', v: it ? it.priority || 'like' : 'like', o: opts(PRIO) }, { k: 'category', l: 'Catégorie', t: 'sel', v: it ? it.category || 'other' : 'other', o: opts(CAT) }, { k: 'status', l: 'Statut', t: 'sel', v: it ? it.status || 'wish' : 'wish', o: opts(STAT) }]
           : [{ k: 'spent', l: 'Dépensé réellement (€)', t: 'number', v: it ? it.spent : '' }]),
         { k: 'notes', l: w ? 'Notes (couleur, taille, modèle… — vues par les personnes qui voient la liste)' : '🔒 Notes (vues par tous les membres de la liste)', t: 'area', v: it ? it.notes : '' },
         { k: 'private', l: '🔐 Ma note perso (visible par moi seulement)', t: 'area', v: it ? D.notes[it.id] || '' : '' },
-        { k: 'photo', l: 'Photo (depuis le téléphone ou l’ordinateur)', t: 'photo', has: !!(it && it.photo_path) }
+        { t: 'html', html: '</details>' }
       ],
       onSubmit: async (o) => {
         const patch = { name: o.name, est_price: o.est_price, link: o.link, notes: o.notes };
@@ -425,6 +426,7 @@
         Object.assign(patch, sameLink ? { link_title: lp.title, link_image: lp.image, link_description: lp.description, link_price: lp.price } : { link_title: null, link_image: null, link_description: null, link_price: null });
         const file = $('#f input[type=file]').files[0];
         if (file && !/^image\//.test(file.type)) throw new Error('Ce fichier n’est pas une image.');
+        const useSite = !!($('#usesite') && $('#usesite').checked);
         let saved;
         if (edit) saved = await api.updateItem(it, patch);
         else saved = await api.createItem(l.id, patch, newId());
@@ -432,6 +434,11 @@
         try {
           if (file) { const path = await api.uploadPhoto(l.id, saved.id, file); if (saved.photo_path) await api.removePhoto(saved.photo_path).catch(() => {}); extra.photo_path = path; }
           else if (o.photo_remove && saved.photo_path) { await api.removePhoto(saved.photo_path).catch(() => {}); extra.photo_path = null; }
+          else if (useSite && sameLink && lp.image && !saved.photo_path) {
+            // on garde une vraie copie de la photo du site : elle s'affichera toujours, même si le marchand la bloque
+            try { const raw = await api.fetchLinkImage(lp.image); const blob = await root.V2API.resizeImage(raw); extra.photo_path = await api.uploadPhoto(l.id, saved.id, blob, true); }
+            catch (e) { console.warn('photo du site non enregistrée', e); }
+          }
           if (Object.keys(extra).length) saved = await api.updateItem(saved, extra);
           await api.setPrivateNote(saved.id, o.private);
         } catch (e) { await refresh(true); throw new Error('Le cadeau est enregistré, mais : ' + api.friendly(e)); }
@@ -441,8 +448,10 @@
         const link = f.elements.link, box = $('#lp', f);
         const showLp = () => {
           if (!lp) { box.innerHTML = ''; return; }
+          const canKeep = lp.image && !(it && it.photo_path);
           box.innerHTML = `<div class="linkprev">${safe(lp.image) ? `<img src="${esc(lp.image)}" referrerpolicy="no-referrer" alt="" data-fb>` : ''}<div><b>${esc(lp.title || '')}</b>${lp.description ? `<div class="note">${esc(String(lp.description).slice(0, 140))}</div>` : ''}
-            <div class="acts" style="margin-top:4px">${lp.title ? '<button type="button" id="usetitle">Utiliser le titre</button>' : ''}${lp.price ? `<button type="button" id="useprice">Prix du site : ${eur(lp.price)}</button>` : ''}</div></div></div>`;
+            <div class="acts" style="margin-top:4px">${lp.title ? '<button type="button" id="usetitle">Utiliser le titre</button>' : ''}${lp.price ? `<button type="button" id="useprice">Prix du site : ${eur(lp.price)}</button>` : ''}</div>
+            ${canKeep ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600;margin-top:6px"><input type="checkbox" id="usesite" checked> Garder la photo du site</label>' : ''}</div></div>`;
           const ut = $('#usetitle', box), up = $('#useprice', box);
           if (ut) ut.onclick = () => { f.elements.name.value = lp.title; };
           if (up) up.onclick = () => { f.elements.est_price.value = lp.price; };
@@ -627,7 +636,18 @@
     me: () => ACT.tab(S.tab === 'profile' ? 'home' : 'profile'),
     filter: (id) => { S.filter = id; render(); },
     lopen: (id) => { S.tab = 'detail'; S.lid = id; S.filter = 'all'; render(); window.scrollTo(0, 0); },
-    lnew: () => listForm(), lnewc: () => listForm(null, 'collab'), ljoin: () => joinDialog(),
+    lnew: async () => { const k = await choose('Que veux-tu créer ?', [{ v: 'wishes', l: '🎀 Une liste d’envies (à partager)' }, { v: 'gifts', l: '🎁 Un carnet de cadeaux pour quelqu’un' }]); if (k) listForm(null, k); },
+    lnewc: () => listForm(null, 'collab'), ljoin: () => joinDialog(),
+    eye: (id, el) => { const i = el.closest('label').querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; return false; },
+    later: () => { try { localStorage.setItem('noel_nameasked', '1'); } catch (e) { /* ignore */ } render(); },
+    resend: async () => { await api.resend(S.resend); toast('✅ E-mail renvoyé. Regarde aussi tes courriers indésirables.'); },
+    start: async (id) => {
+      if (id === 'gift') return listForm(null, 'gifts');
+      if (!mayWrite()) return;
+      let l = D.lists.find((x) => x.kind === 'wishes' && x.role === 'owner');
+      if (!l) { const nl = await api.createList({ title: 'Mes envies', emoji: '🎀', kind: 'wishes' }); await refresh(true); l = list(nl.id); }
+      S.tab = 'detail'; S.lid = l.id; S.filter = 'all'; render(); itemForm(l);
+    },
     ledit: (id) => listForm(list(id)), lshare: (id) => openShare(id), lmembers: (id) => openShare(id),
     ldel: async (id) => {
       const l = list(id), n = itemsOf(id).length;
@@ -695,17 +715,17 @@
     try {
       if (id === 'qa') { const q = String(fd.get('q') || '').trim(); if (!q || !mayWrite()) return; await api.addIdea(q); e.target.reset(); await refresh(true); if (S.tab === 'home') ACT.tab('vrac'); }
       else if (id === 'nameform') { await api.setName(D.me.id, fd.get('name')); await refresh(true); toast('✅ Prénom enregistré.'); }
-      else if (id === 'pwform') { const p = String(fd.get('pw') || ''); if (p.length < 8) return toast('8 caractères minimum.'); await api.setPassword(p); e.target.reset(); toast('✅ Mot de passe changé.'); }
+      else if (id === 'pwform') { const p = String(fd.get('pw') || ''); if (p.length < 6) return toast('6 caractères minimum.'); await api.setPassword(p); e.target.reset(); toast('✅ Mot de passe changé.'); }
       else {
         const email = String(fd.get('email') || '').trim().toLowerCase(); if (err) err.textContent = '';
         const btn = e.target.querySelector('button.pri'); if (btn) btn.disabled = true;
         try {
           if (id === 'resetform') { await api.resetPassword(email); S.authMode = 'in'; S.notice = 'Si cette adresse a un compte, un e-mail vient de partir avec un lien pour choisir un nouveau mot de passe.'; render(); }
-          else if (id === 'recform') { const p = String(fd.get('pw') || ''); if (p.length < 8) { err.textContent = '8 caractères minimum.'; return; } await api.setPassword(p); S.recovery = false; toast('✅ Mot de passe changé.'); const s = await api.getSession(); if (s) await enter(s.user); else render(); }
+          else if (id === 'recform') { const p = String(fd.get('pw') || ''); if (p.length < 6) { err.textContent = '6 caractères minimum.'; return; } await api.setPassword(p); S.recovery = false; toast('✅ Mot de passe changé.'); const s = await api.getSession(); if (s) await enter(s.user); else render(); }
           else if (e.target.dataset.mode === 'up') {
-            const pw = String(fd.get('password') || ''); if (pw.length < 8) { err.textContent = 'Mot de passe : 8 caractères minimum.'; return; }
-            const r = await api.signUp(email, pw, fd.get('name'));
-            if (r.session) await enter(r.session.user); else { S.authMode = 'in'; S.notice = 'Compte créé. Vérifie ta boîte mail : clique sur le lien de confirmation, puis connecte-toi ici.'; render(); }
+            const pw = String(fd.get('password') || ''); if (pw.length < 6) { err.textContent = 'Mot de passe : 6 caractères minimum.'; return; }
+            const r = await api.signUp(email, pw, '');
+            if (r.session) await enter(r.session.user); else { S.authMode = 'in'; S.resend = email; S.notice = 'Compte créé ! Ouvre l’e-mail que tu viens de recevoir et appuie sur le lien de confirmation (pense aux courriers indésirables). Ensuite, reviens ici et connecte-toi.'; render(); }
           } else { const r = await api.signIn(email, String(fd.get('password') || '')); await enter(r.session.user); }
         } finally { if (btn) btn.disabled = false; }
       }
