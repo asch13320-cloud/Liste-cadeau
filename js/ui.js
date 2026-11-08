@@ -103,7 +103,7 @@
   }
   document.addEventListener('error', (e) => {
     const t = e.target;
-    if (t && t.tagName === 'IMG' && t.dataset.fb !== undefined) { const d = document.createElement('div'); d.className = 'ph'; d.style.cssText = 'height:96px;display:grid;place-items:center;font-size:44px'; d.textContent = '✂️'; t.replaceWith(d); }
+    if (t && t.tagName === 'IMG' && t.dataset.fb !== undefined) { const g = t.dataset.fb === 'g', d = document.createElement('div'); d.className = 'ph'; d.style.cssText = g ? 'height:80px;display:grid;place-items:center;font-size:40px' : 'height:112px;display:grid;place-items:center;font-size:52px'; d.textContent = '✂️'; t.replaceWith(d); }
   }, true);
 
   // ------------------------------------------------------------------ chargement des données
@@ -208,10 +208,13 @@
 
   // ------------------------------------------------------------------ cartes
   const btn = (a, id, l, c) => `<button data-a="${a}" data-id="${esc(id)}" class="${c || ''}">${l}</button>`;
-  function itemPhoto(it, h) {
-    if (it.photo_path) return `<img class="ph" data-photo="${esc(it.photo_path)}" data-fb alt="" style="height:${h}px;object-fit:cover" loading="lazy">`;
-    if (safe(it.link_image)) return `<img class="ph" src="${esc(it.link_image)}" referrerpolicy="no-referrer" loading="lazy" data-fb alt="" style="height:${h}px;object-fit:cover">`;
-    return `<div class="ph" style="height:${h - 16}px;display:grid;place-items:center;font-size:44px">${it.bought ? '🎁' : '✂️'}</div>`;
+  // Même rendu que l'ancienne version : envies = photo entière dans son cadre blanc ; carnets = photo recadrée.
+  function itemPhoto(it, w) {
+    const st = w ? '' : ' style="height:110px;object-fit:cover"', fb = w ? 'w' : 'g';
+    if (it.photo_path) return `<img class="ph" data-photo="${esc(it.photo_path)}" data-fb="${fb}" alt="" loading="lazy"${st}>`;
+    if (safe(it.link_image)) return `<img class="ph" src="${esc(it.link_image)}" referrerpolicy="no-referrer" loading="lazy" data-fb="${fb}" alt=""${st}>`;
+    return w ? '<div class="ph" style="height:112px;display:grid;place-items:center;font-size:52px">✂️</div>'
+      : `<div class="ph" style="height:80px;display:grid;place-items:center;font-size:40px">${it.bought ? '🎁' : '✂️'}</div>`;
   }
 
   function itemCard(l, it) {
@@ -226,7 +229,7 @@
     if (ed) acts.push(btn('iedit', it.id, '✎'), btn('imove', it.id, w ? '🎁 Pour qui ?' : '→ Autre liste'));
     if (safe(it.link)) acts.push(`<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">Voir le produit ↗</a>`);
     if (ed) acts.push(btn('idel', it.id, '×'));
-    return `<article class="card ${it.favorite ? 'fav' : ''}">${itemPhoto(it, 112)}
+    return `<article class="card ${it.favorite ? 'fav' : ''}">${itemPhoto(it, w)}
       <div class="top"><h4 class="wish-title">${esc(it.name)}</h4>${w ? (ed ? btn('ifav', it.id, it.favorite ? '💖' : '☆', 'heart') : (it.favorite ? '<span class="heart">💖</span>' : '')) : `<span class="tag">${has(it.est_price) ? eur(it.est_price) : '–'}</span>`}</div>
       ${tags.length && w ? `<div class="tags">${tags.join('')}</div>` : ''}
       ${!w && it.bought && has(it.spent) ? `<div class="note">Dépensé : ${eur(it.spent)}</div>` : ''}
@@ -302,7 +305,7 @@
     <div class="section-head"><div><div class="small-label">${w ? 'Liste d’envies' : 'Le carnet de'}</div><h2>${esc(l.emoji)} ${esc(l.title)}</h2></div><span class="paper-note">${ROLE[l.role]}</span></div>
     ${l.role === 'reader' ? '<p class="banner">👀 Lecture seule : tu vois cette liste en direct, mais tu ne peux pas la modifier.</p>' : ''}
     ${!w ? `<div class="card"><div class="top"><div><div class="small-label">La hotte</div><h4>${all.length} ${plural(all.length, 'idée', 'idées')} à préparer</h4></div><b style="font:700 22px var(--display)">${eur(sp)}</b></div>${has(l.budget) ? `<p class="note">Dépensé sur ${eur(l.budget)} prévus</p>` : ''}<div class="bar"><i style="width:${pc}%"></i></div></div>` : ''}
-    <div class="acts" style="margin:12px 0">${ed ? btn('iadd', l.id, '＋ Ajouter', 'on') : ''}${l.role === 'owner' ? btn('lshare', l.id, '👥 Partager') + btn('ledit', l.id, '✎ Modifier') + btn('ldel', l.id, 'Supprimer') : l.role === 'collaborator' ? btn('lmembers', l.id, '👥 Membres') + btn('lleave', l.id, 'Quitter') : btn('lleave', l.id, 'Quitter la liste')}</div>
+    <div class="acts" style="margin:12px 0">${ed ? btn('iadd', l.id, '＋ Ajouter', 'on') : ''}${ed && all.some((i) => i.link && !i.photo_path) ? btn('lfill', l.id, '🖼 Photos des liens (' + all.filter((i) => i.link && !i.photo_path).length + ')') : ''}${l.role === 'owner' ? btn('lshare', l.id, '👥 Partager') + btn('ledit', l.id, '✎ Modifier') + btn('ldel', l.id, 'Supprimer') : l.role === 'collaborator' ? btn('lmembers', l.id, '👥 Membres') + btn('lleave', l.id, 'Quitter') : btn('lleave', l.id, 'Quitter la liste')}</div>
     <div class="chips">${filters.map(([k, t]) => `<button class="chip ${F === k ? 'on' : ''}" data-a="filter" data-id="${k}">${t}</button>`).join('')}</div>
     ${shown.length ? `<div class="scrap-grid">${shown.map((i) => itemCard(l, i)).join('')}</div>` : `<p class="empty">${all.length ? 'Rien dans ce filtre.' : ed ? 'La page est encore blanche… à toi de la remplir ! ✂️' : 'Cette liste est vide pour le moment.'}</p>`}`;
   }
@@ -356,7 +359,7 @@
     return `<div class="section-head"><div><div class="small-label">Liste partagée avec toi</div><h2>${esc(d.list.emoji)} ${esc(d.list.title)}</h2></div><span class="paper-note">Lecture seule</span></div>
     <p class="banner">👀 Tu vois cette liste en direct (mise à jour automatique). Tu ne peux pas la modifier.</p>
     <div class="acts" style="margin-bottom:12px">${btn('pubkeep', 0, S.user ? '📌 Garder dans mes listes partagées' : '🔑 Me connecter pour la garder', 'on')}${btn('pubclose', 0, S.user ? 'Fermer' : 'Accueil')}</div>
-    ${d.items.length ? `<div class="scrap-grid">${d.items.map((i) => `<article class="card ${i.favorite ? 'fav' : ''}">${safe(i.link_image) ? `<img class="ph" src="${esc(i.link_image)}" referrerpolicy="no-referrer" loading="lazy" data-fb alt="" style="height:112px;object-fit:cover">` : '<div class="ph" style="height:96px;display:grid;place-items:center;font-size:44px">✂️</div>'}
+    ${d.items.length ? `<div class="scrap-grid">${d.items.map((i) => `<article class="card ${i.favorite ? 'fav' : ''}">${safe(i.link_image) ? `<img class="ph" src="${esc(i.link_image)}" referrerpolicy="no-referrer" loading="lazy" data-fb="w" alt="">` : '<div class="ph" style="height:112px;display:grid;place-items:center;font-size:52px">✂️</div>'}
       <div class="top"><h4 class="wish-title">${esc(i.name)}</h4>${i.favorite ? '<span class="heart">💖</span>' : ''}</div>
       <div class="tags">${i.priority ? `<span class="tag p${['love', 'like', 'maybe'].indexOf(i.priority)}">${esc(PRIO[i.priority] || '')}</span>` : ''}${i.category ? `<span class="tag">${esc(CAT[i.category] || '')}</span>` : ''}${has(i.est_price) ? `<span class="tag">${eur(i.est_price)}</span>` : ''}</div>
       ${i.notes ? `<p class="note">✎ ${esc(i.notes)}</p>` : ''}${safe(i.link) ? `<div class="acts"><a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer">Voir le produit ↗</a></div>` : ''}</article>`).join('')}</div>` : '<p class="empty">Cette liste est vide pour le moment.</p>'}
@@ -449,7 +452,7 @@
         const showLp = () => {
           if (!lp) { box.innerHTML = ''; return; }
           const canKeep = lp.image && !(it && it.photo_path);
-          box.innerHTML = `<div class="linkprev">${safe(lp.image) ? `<img src="${esc(lp.image)}" referrerpolicy="no-referrer" alt="" data-fb>` : ''}<div><b>${esc(lp.title || '')}</b>${lp.description ? `<div class="note">${esc(String(lp.description).slice(0, 140))}</div>` : ''}
+          box.innerHTML = `<div class="linkprev">${safe(lp.image) ? `<img src="${esc(lp.image)}" referrerpolicy="no-referrer" alt="" data-fb="g">` : ''}<div><b>${esc(lp.title || '')}</b>${lp.description ? `<div class="note">${esc(String(lp.description).slice(0, 140))}</div>` : ''}
             <div class="acts" style="margin-top:4px">${lp.title ? '<button type="button" id="usetitle">Utiliser le titre</button>' : ''}${lp.price ? `<button type="button" id="useprice">Prix du site : ${eur(lp.price)}</button>` : ''}</div>
             ${canKeep ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600;margin-top:6px"><input type="checkbox" id="usesite" checked> Garder la photo du site</label>' : ''}</div></div>`;
           const ut = $('#usetitle', box), up = $('#useprice', box);
@@ -457,16 +460,20 @@
           if (up) up.onclick = () => { f.elements.est_price.value = lp.price; };
         };
         showLp();
-        link.addEventListener('change', async () => {
-          const v = link.value.trim(); lp = null; showLp();
+        const preview = async (v) => {
+          lp = null; showLp();
           if (!v) return;
           try { api.safeUrl(v); } catch (e) { box.innerHTML = `<p class="err">${esc(e.message)}</p>`; return; }
           if (S.offline) return;
           box.innerHTML = '<p class="note">Je regarde le produit…</p>';
           const r = await api.linkPreview(v);
+          if (link.value.trim() !== v) return; // le lien a changé entre-temps
           if (r && (r.title || r.image)) { lp = { title: r.title, image: r.image, description: r.description, price: r.price, url: v }; if (!f.elements.name.value.trim() && r.title) f.elements.name.value = r.title; showLp(); }
           else box.innerHTML = '<p class="note">Aperçu automatique impossible pour ce site : saisis le titre à la main et ajoute une photo si tu veux. Le lien est conservé.</p>';
-        });
+        };
+        link.addEventListener('change', () => preview(link.value.trim()));
+        // cadeau déjà enregistré (ou importé) avec un lien mais sans photo : on cherche la photo tout de suite
+        if (edit && it.link && !it.photo_path && !(lp && lp.image)) preview(it.link);
       }
     });
   }
@@ -621,6 +628,28 @@
     if (!ls.length) { toast('Crée d’abord une liste pour pouvoir y ranger ça.'); return null; }
     return choose(title, ls.map((l) => ({ v: l.id, l: l.emoji + ' ' + l.title })), sub);
   }
+  async function fillPhotos(lid) {
+    const l = list(lid), todo = itemsOf(lid).filter((i) => i.link && !i.photo_path);
+    if (!todo.length) return toast('Tous les cadeaux avec un lien ont déjà leur photo.');
+    let ok = 0, ko = 0, stop = false;
+    const d = modal('<h3>🖼 Photos des liens</h3><p class="sub" id="fp">Je démarre…</p><p class="note">Garde l’application ouverte. Tu peux arrêter quand tu veux : ce qui est fait est conservé.</p><div class="row"><button class="ghost" data-close>Arrêter</button></div>');
+    d.addEventListener('close', () => { stop = true; }, { once: true });
+    for (let n = 0; n < todo.length && !stop; n++) {
+      const it = todo[n], fp = $('#fp'); if (fp) fp.textContent = `${n + 1} / ${todo.length} : ${it.name}`;
+      try {
+        const r = await api.linkPreview(it.link);
+        if (!(r && r.image)) { ko++; continue; }
+        const blob = await root.V2API.resizeImage(await api.fetchLinkImage(r.image));
+        const path = await api.uploadPhoto(l.id, it.id, blob, true);
+        await api.updateItem(it, { photo_path: path, link_title: it.link_title || r.title, link_image: r.image, link_description: it.link_description || r.description, link_price: r.price });
+        ok++;
+      } catch (e) { console.warn(e); ko++; }
+    }
+    if ($('#dlg').open) closeModal();
+    await refresh(true);
+    toast(`${ok} photo${ok > 1 ? 's' : ''} ajoutée${ok > 1 ? 's' : ''}${ko ? ` · ${ko} site${ko > 1 ? 's' : ''} sans photo récupérable (ajoute-la à la main)` : ''}.`);
+  }
+
   async function moveItem(it, targetId) {
     const t = list(targetId); if (!t || !canEdit(t)) throw new Error('forbidden');
     const f = { name: it.name, est_price: it.est_price, link: it.link, notes: it.notes, link_title: it.link_title, link_image: it.link_image, link_description: it.link_description, link_price: it.link_price };
@@ -658,6 +687,7 @@
       if (!(await choose('Quitter cette liste ?', [{ v: 1, l: 'Oui, quitter' }], 'Tu ne la verras plus (le propriétaire peut te réinviter).'))) return;
       try { await api.removeMember(id, D.me.id); S.tab = 'shared'; S.lid = null; await refresh(true); } catch (e) { fail(e); }
     },
+    lfill: (id) => fillPhotos(id),
     iadd: (id) => itemForm(list(id)), iedit: (id) => { const it = findItem(id); itemForm(itemList(it), it); },
     inext: (id) => { const it = findItem(id); const o = ['idea', 'wish', 'received']; return patchItem(id, { status: o[(o.indexOf(it.status) + 1) % 3] }); },
     ifav: (id) => patchItem(id, { favorite: !findItem(id).favorite }),

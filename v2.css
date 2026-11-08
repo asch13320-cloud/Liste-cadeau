@@ -17,7 +17,6 @@
 .member select{padding:6px;border:2px solid var(--ink);border-radius:3px;background:#fff}
 .linkprev{display:flex;gap:10px;align-items:center;padding:8px;border:1.5px dashed var(--ink);border-radius:3px;background:var(--paper);margin:6px 0;font-size:13px}
 .linkprev img{width:56px;height:56px;object-fit:cover;border-radius:3px;flex:none}
-.card .ph{object-fit:cover}
 .private{font:600 13px/1.35 var(--font);color:var(--pine)}
 dialog .sub{font:600 13px/1.4 var(--font);color:var(--muted);margin:0 0 8px}
 dialog h4{margin:14px 0 6px}
