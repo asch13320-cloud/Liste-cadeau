@@ -7,25 +7,25 @@
 <meta name="theme-color" content="#c9473d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Noël 2026">
+<meta name="apple-mobile-web-app-title" content="Mes envies">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
-<title>Mon catalogue de Noël · 2026</title>
+<title>Mon catalogue d’envies</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Nunito:wght@500;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=20261108c">
-<link rel="stylesheet" href="v2.css?v=20261108c">
+<link rel="stylesheet" href="style.css?v=20261108d">
+<link rel="stylesheet" href="v2.css?v=20261108d">
 </head>
 <body>
-<header><div class="head-inner"><div><div class="kicker">Le petit atelier des envies</div><h1>Mon catalogue de Noël</h1></div><div class="cd" id="cd"></div></div><button id="me" class="me" data-a="me" aria-label="Mon profil" title="Mon profil" hidden>👤</button><span id="sync" class="sync" hidden></span></header>
+<header><div class="head-inner"><div><div class="kicker">Le petit atelier des envies</div><h1>Mon catalogue d’envies</h1></div><div class="cd" id="cd"></div></div><button id="me" class="me" data-a="me" aria-label="Mon profil" title="Mon profil" hidden>👤</button><span id="sync" class="sync" hidden></span></header>
 <main id="app"><p class="empty">Chargement…</p></main>
 <nav class="tabs" id="tabs" hidden></nav>
 <dialog id="dlg"></dialog>
 <script src="vendor/supabase-js-2.118.0.min.js"></script>
-<script src="js/config.js?v=20261108c"></script>
-<script src="js/api.js?v=20261108c"></script>
-<script src="js/ui.js?v=20261108c"></script>
+<script src="js/config.js?v=20261108d"></script>
+<script src="js/api.js?v=20261108d"></script>
+<script src="js/ui.js?v=20261108d"></script>
 <script>
 if (window.supabase && window.V2) {
   V2.boot(window.supabase.createClient(CFG.url, CFG.key, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }));

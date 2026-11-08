@@ -128,7 +128,9 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
     F.db.item_private_notes.push({ item_id: F.db.items[0].id, user_id: ME.id, notes: 'secret perso' });
     F.ids = { L1, L2, L3 };
   } });
-  t('accueil : stats et listes', /Mes listes/.test(txt(w)) && !!$(w, '.stats'));
+  t('Atelier allégé : bannière, saisie d’idée, budget, boîte à idées', !!$(w, '.cover') && !!$(w, '#qa') && /Budget restant/.test(txt(w)) && /Ma boîte à idées/.test(txt(w)));
+  t('Atelier allégé : plus de compteurs, d’aperçu de listes ni de coups de cœur', !$(w, '.stats') && !/Mon coin des coups de cœur/.test(txt(w)) && !$(w, '.person') && !/Dans mon atelier/.test(txt(w)));
+  t('« tiroir » renommé « boîte à idées » partout', !/tiroir/i.test($(w, '#app').textContent));
   t('XSS : le nom du cadeau est échappé', !$(w, '#app img[src="x"]'));
   await click(w, '[data-id="mine"]');
   t('« Mes listes » : seulement mes listes non collaboratives', $$(w, '.person').length === 1);
@@ -298,7 +300,7 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, '[data-id="mine"]'); await click(w, '[data-a="lnew"]');
   t('« Créer une liste » : choix du type en 2 gros boutons', /Que veux-tu créer/.test($(w, '#dlg').textContent) && $$(w, '#dlg [data-i]').length === 2);
   await click(w, '#dlg [data-i="1"]'); const fl2 = $(w, '#f');
-  t('carnet de cadeaux : 3 champs seulement (qui, budget, emoji)', fl2.querySelectorAll('input:not([type=hidden])').length === 3 && /Pour qui/.test(fl2.textContent));
+  t('carnet de cadeaux : l’essentiel visible (qui, occasion, budget), le reste replié', /Pour qui/.test(fl2.textContent) && !!fl2.elements.occasion && !!fl2.elements.budget && !fl2.elements.title.closest('details') && !!fl2.elements.event_date.closest('details'));
   setv(fl2, 'title', 'Papa'); await submit(w, fl2); await sleep(120);
   t('carnet créé et ouvert', w.__F.db.lists.some((l) => l.title === 'Papa' && l.kind === 'gifts_for') && /Papa/.test($(w, '#app').textContent));
 
@@ -344,6 +346,28 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   const toastTxt = (($(w, '#toast')) || {}).textContent || '';
   t('action groupée : le site qui refuse est signalé, sans bloquer le reste', /0 photo/.test(toastTxt) && /1 site/.test(toastTxt) && !w.__F.db.items.find((i) => i.name === 'Gants').photo_path);
   t('action groupée : plus rien à compléter côté serveur pour les autres', w.__F.db.items.filter((i) => i.link && !i.photo_path).length === 1);
+
+
+  // 13. occasions : Noël, anniversaire, baby shower… + date + compte à rebours
+  const inDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  w = await boot({ setup: (F) => { seedSession(F); const A = nid(), B = nid(), C = nid(); F.db.lists.push({ id: A, owner_id: ME.id, kind: 'gifts_for', title: 'Maman', emoji: '🎁', occasion: 'christmas', created_at: '1' }, { id: B, owner_id: ME.id, kind: 'gifts_for', title: 'Anniv de Léa', emoji: '🎂', occasion: 'birthday', event_date: inDays(3), created_at: '2' }, { id: C, owner_id: ME.id, kind: 'wishes', title: 'Baby shower', emoji: '🍼', occasion: 'baby_shower', created_at: '3' });
+    F.db.list_members.push({ list_id: A, user_id: ME.id, role: 'owner' }, { list_id: B, user_id: ME.id, role: 'owner' }, { list_id: C, user_id: ME.id, role: 'owner' }); } });
+  t('compte à rebours : prochaine occasion (anniversaire dans 3 jours)', /J-3 🎂/.test($(w, '#cd').textContent) && $(w, '#cd').title === 'Anniv de Léa');
+  await click(w, '[data-id="mine"]');
+  t('listes : occasion affichée sur chaque carte', /🎄 Noël/.test(txt(w)) && /🎂 Anniversaire/.test(txt(w)) && /🍼 Baby shower/.test(txt(w)));
+  t('listes : date de l’occasion affichée', new RegExp(String(new Date(inDays(3) + 'T12:00:00').getDate())).test($$(w, '.person').find((e) => /Léa/.test(e.textContent)).textContent));
+  t('filtre par occasion proposé (3 occasions)', $$(w, '[data-a="occ"]').length === 4);
+  await click(w, '[data-a="occ"][data-id="birthday"]'); t('filtre « Anniversaire » : seule cette liste', $$(w, '.person').length === 1 && /Léa/.test($(w, '.person').textContent));
+  await click(w, '[data-a="occ"][data-id="all"]'); t('filtre « Toutes » : tout revient', $$(w, '.person').length === 3);
+  await click(w, '[data-a="lnew"]'); await click(w, '#dlg [data-i="1"]'); const fo = $(w, '#f');
+  t('création : choix de l’occasion, Noël proposé par défaut', fo.elements.occasion.value === 'christmas' && fo.elements.occasion.options.length === 5);
+  setv(fo, 'title', 'Jules'); fo.elements.occasion.value = 'wedding'; fo.elements.event_date.value = inDays(40); await submit(w, fo); await sleep(120);
+  const jl = w.__F.db.lists.find((l) => l.title === 'Jules');
+  t('création : occasion et date enregistrées', jl && jl.occasion === 'wedding' && jl.event_date === inDays(40));
+  // base pas encore mise à jour (migration 5 non lancée) : la liste est créée quand même, avec un message clair
+  const w3 = await boot({ setup: (F) => { seedSession(F); const rows = F.db.lists; const origFrom = F.sb.from; F.sb.from = (tb) => { const b = origFrom(tb); if (tb !== 'lists') return b; const ins = b.insert; b.insert = (p) => { if (p && p.occasion !== undefined) { return { select: () => ({ single: async () => ({ data: null, error: { message: "Could not find the 'occasion' column of 'lists' in the schema cache" } }) }) }; } return ins(p); }; return b; }; } });
+  await click(w3, '[data-id="mine"]'); await click(w3, '[data-a="lnew"]'); await click(w3, '#dlg [data-i="0"]'); const fm = $(w3, '#f'); setv(fm, 'title', 'Mes envies'); await submit(w3, fm); await sleep(150);
+  t('migration 5 pas encore lancée : la liste est créée quand même', w3.__F.db.lists.some((l) => l.title === 'Mes envies') && /migration 5/.test(($(w3, '#toast') || {}).textContent || ''));
 
   // 10. déconnexion
   await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);

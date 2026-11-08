@@ -12,11 +12,13 @@
   const CAT = { beauty: 'Beauté', clothes: 'Vêtements', home: 'Maison', tech: 'Tech', leisure: 'Loisirs', other: 'Autre' };
   const STAT = { idea: 'Idée', wish: 'Envie', received: 'Reçu' };
   const SI = { idea: '💭', wish: '⭐', received: '🎁' };
+  const OCC = { christmas: ['🎄', 'Noël'], birthday: ['🎂', 'Anniversaire'], baby_shower: ['🍼', 'Baby shower'], wedding: ['💍', 'Mariage'], other: ['🎁', 'Autre occasion'] };
+  const fdate = (d) => new Date(d + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   const ROLE = { owner: 'Propriétaire', collaborator: 'Collaborateur', reader: 'Lecteur' };
   const opts = (o) => Object.entries(o);
   const ISO = (d) => new Date(d).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 
-  const S = { loading: true, user: null, tab: 'home', lid: null, filter: 'all', busy: false, offline: !navigator.onLine, cached: false, rt: false, recovery: false, pub: null, authMode: 'in', notice: '', backupDone: false, dirty: false };
+  const S = { occ: 'all', loading: true, user: null, tab: 'home', lid: null, filter: 'all', busy: false, offline: !navigator.onLine, cached: false, rt: false, recovery: false, pub: null, authMode: 'in', notice: '', backupDone: false, dirty: false };
   let D = null, api = null, sb = null, unsub = null, poll = null, pubPoll = null, refreshing = null, entering = false;
   const PH = {}; // chemin photo -> { url, exp }
 
@@ -241,7 +243,8 @@
 
   function listCard(l) {
     const its = itemsOf(l.id), b = its.filter((i) => i.bought).length, mc = memberCount(l);
-    const badges = [`<span class="badge ${l.role === 'owner' ? 'pine' : l.role === 'collaborator' ? 'red' : 'blue'}">${ROLE[l.role]}</span>`];
+    const oc = OCC[l.occasion] || OCC.christmas;
+    const badges = [`<span class="badge">${oc[0]} ${oc[1]}${l.event_date ? ' · ' + esc(fdate(l.event_date)) : ''}</span>`, `<span class="badge ${l.role === 'owner' ? 'pine' : l.role === 'collaborator' ? 'red' : 'blue'}">${ROLE[l.role]}</span>`];
     if (l.role !== 'reader' && mc > 1) badges.push(`<span class="badge">👥 ${mc}</span>`);
     return `<button class="person tap" data-a="lopen" data-id="${l.id}"><div class="top"><h4>${esc(l.emoji)} ${esc(l.title)}</h4><span class="small-label">${its.length} ${plural(its.length, 'idée', 'idées')}</span></div>
       <div class="bar"><i style="width:${l.kind === 'gifts_for' && its.length ? (b / its.length) * 100 : 0}%"></i></div>
@@ -253,42 +256,41 @@
 
   function viewHome() {
     const gl = D.lists.filter((l) => l.kind === 'gifts_for' && canEdit(l)), gi = gl.flatMap((l) => itemsOf(l.id));
-    const favs = D.lists.filter((l) => l.kind === 'wishes' && l.role === 'owner').flatMap((l) => itemsOf(l.id).filter((i) => i.favorite).map((i) => [l, i])).slice(0, 3);
     const bud = sum(gl.map((l) => l.budget)), sp = sum(gi.map((i) => i.spent));
-    const myW = D.lists.filter((l) => l.kind === 'wishes' && l.role === 'owner');
     return `<section class="cover"><div class="cover-copy"><div class="edition">Édition spéciale · Hiver 2026</div><h2>La magie<br>des envies.</h2><p>Un petit carnet de choses qui me feraient plaisir…</p></div><div class="cover-stamp">100%<br>envies<br> choisies</div><div class="cover-art">🎄</div></section>
     ${!D.me.name && !localStorage.getItem('noel_nameasked') ? `<form id="nameform" class="card"><div class="small-label">Pour tes proches (facultatif)</div><h4>Comment t’appelles-tu ?</h4><p class="note">Ton prénom s’affiche pour les personnes avec qui tu partages une liste.</p><div class="qa"><input name="name" maxlength="60" placeholder="Ton prénom" aria-label="Prénom"><button class="pri">OK</button></div><button type="button" class="ghost" data-a="later">Plus tard</button></form>` : ''}
     ${!D.lists.length ? `<div class="card"><div class="small-label">Bienvenue 🎄</div><h4>Par où commencer ?</h4><div class="acts" style="flex-direction:column;align-items:stretch">${btn('start', 'wish', '🎀 Noter mes envies', 'pri')}${btn('start', 'gift', '🎁 Préparer des cadeaux pour quelqu’un')}${legacyData() ? btn('tab', 'profile', '📦 Récupérer mon ancienne version') : ''}</div></div>` : ''}
-    <form id="qa" class="qa"><input name="q" placeholder="Une idée à découper et garder…" aria-label="Idée en vrac" maxlength="1000"><button class="pri">Coller ✂</button></form>
-    <div class="section-head"><h2>Dans mon atelier</h2><span class="paper-note">Le compte à rebours est lancé</span></div>
-    <div class="stats"><div class="stat"><b>${gl.length}</b><span>carnets</span></div><div class="stat"><b>${gi.length}</b><span>cadeaux notés</span></div><div class="stat"><b>${sum(myW.map((l) => itemsOf(l.id).length))}</b><span>mes envies</span></div>
-    <div class="stat pine"><b>${gi.filter((i) => i.bought).length}</b><span>trouvés</span></div><div class="stat pine"><b>${gi.filter((i) => i.wrapped).length}</b><span>emballés</span></div><div class="stat red"><b>${eur(sp)}</b><span>dépensés</span></div></div>
-    <div class="section-head"><h2>Mes listes</h2><span class="paper-note">Pour les gens que j'aime ♥</span></div>
-    ${D.lists.length ? `<div>${D.lists.slice(0, 6).map(listCard).join('')}</div>${D.lists.length > 6 ? btn('tab', 'mine', 'Voir toutes mes listes') : ''}` : '<p class="empty">Ta première liste n’attend que son titre. 🎀</p>' + btn('lnew', 0, '＋ Créer une liste', 'pri')}
-    <div class="section-head"><h2>Mon coin des coups de cœur</h2><span class="paper-note">À garder sous le coude</span></div>
-    ${favs.length ? `<div class="scrap-grid">${favs.map(([l, i]) => itemCard(l, i)).join('')}</div>` : '<p class="empty">Ajoute des étoiles à tes envies pour les retrouver ici.</p>'}
-    <div class="card"><div class="top"><div><div class="small-label">La hotte en préparation</div><h4>Budget restant</h4></div><strong style="font:700 23px var(--display);color:var(--pine)">${eur(bud - sp)}</strong></div><p class="note">Sur ${eur(bud)} prévus pour tous les carnets.</p></div>
-    <div class="card"><div class="top"><div><div class="small-label">Les bouts de papier qui traînent</div><h4>Mon tiroir à idées 💡</h4></div><span class="tag">${D.inbox.length}</span></div><div class="acts">${btn('tab', 'vrac', 'Ouvrir le tiroir', 'on')}</div></div>`;
+    <form id="qa" class="qa"><input name="q" placeholder="Une idée à découper et garder…" aria-label="Idée à ranger dans la boîte à idées" maxlength="1000"><button class="pri">Coller ✂</button></form>
+    <div class="card"><div class="top"><div><div class="small-label">Pour tous mes cadeaux</div><h4>Budget restant</h4></div><strong style="font:700 23px var(--display);color:var(--pine)">${eur(bud - sp)}</strong></div>
+      <p class="note">${bud ? `Sur ${eur(bud)} prévus pour tous les carnets.` : 'Ajoute un budget à un carnet de cadeaux pour suivre ici ce qu’il te reste.'}</p></div>
+    <div class="card"><div class="top"><div><div class="small-label">Les bouts de papier qui traînent</div><h4>Ma boîte à idées 💡</h4></div><span class="tag">${D.inbox.length}</span></div><div class="acts">${btn('tab', 'vrac', 'Ouvrir la boîte', 'on')}</div></div>`;
   }
 
   function viewVrac() {
-    return `<button class="ghost" data-a="tab" data-id="home">← Atelier</button><div class="section-head"><div><div class="small-label">Les bouts de papier qui traînent</div><h2>Mon tiroir à idées 💡</h2></div></div><p class="intro">On note vite, on rangera plus tard.</p>
+    return `<button class="ghost" data-a="tab" data-id="home">← Atelier</button><div class="section-head"><div><div class="small-label">Les bouts de papier qui traînent</div><h2>Ma boîte à idées 💡</h2></div></div><p class="intro">On note vite, on rangera plus tard.</p>
     <form id="qa" class="qa"><input name="q" placeholder="Une idée…" aria-label="Idée" maxlength="1000"><button class="pri">Coller ✂</button></form>
-    ${D.inbox.length ? `<div class="scrap-grid">${D.inbox.map((v) => `<article class="card"><div class="small-label">À classer</div><h4>${esc(v.text)}</h4><div class="acts" style="margin-top:12px">${btn('vgive', v.id, '🎁 Pour qui ?')}${btn('vwish', v.id, '🎀 Mes envies')}${btn('vdel', v.id, '×')}</div></article>`).join('')}</div>` : '<p class="empty">Ton tiroir est vide. Profite, ça ne durera pas. 😌</p>'}`;
+    ${D.inbox.length ? `<div class="scrap-grid">${D.inbox.map((v) => `<article class="card"><div class="small-label">À classer</div><h4>${esc(v.text)}</h4><div class="acts" style="margin-top:12px">${btn('vgive', v.id, '🎁 Pour qui ?')}${btn('vwish', v.id, '🎀 Mes envies')}${btn('vdel', v.id, '×')}</div></article>`).join('')}</div>` : '<p class="empty">Ta boîte est vide. Profite, ça ne durera pas. 😌</p>'}`;
   }
 
+  function occChips(ls) {
+    const present = [...new Set(ls.map((l) => l.occasion || 'christmas'))];
+    if (present.length < 2) return '';
+    if (S.occ !== 'all' && !present.includes(S.occ)) S.occ = 'all';
+    return `<div class="chips"><button class="chip ${S.occ === 'all' ? 'on' : ''}" data-a="occ" data-id="all">Toutes</button>${present.map((k) => `<button class="chip ${S.occ === k ? 'on' : ''}" data-a="occ" data-id="${k}">${OCC[k][0]} ${OCC[k][1]}</button>`).join('')}</div>`;
+  }
+  const byOcc = (l) => S.occ === 'all' || (l.occasion || 'christmas') === S.occ;
+
   function viewLists(kind) {
-    const L = D.lists.filter((l) => l.role === 'owner');
     if (kind === 'mine') {
-      const mine = L.filter((l) => !isCollab(l));
+      const all = D.lists.filter((l) => l.role === 'owner' && !isCollab(l)), mine = all.filter(byOcc);
       return `<div class="section-head"><div><div class="small-label">Mes carnets à moi</div><h2>Mes listes 🎀</h2></div><span class="paper-note">${mine.length} ${plural(mine.length, 'liste', 'listes')}</span></div>
-      <p class="intro">Mes envies, et mes carnets de cadeaux pour les autres.</p>${btn('lnew', 0, '＋ Créer une liste', 'pri')}<div style="margin-top:14px">${mine.map(listCard).join('') || '<p class="empty">Crée ta première liste. ✨</p>'}</div>`;
+      <p class="intro">Mes envies, et mes carnets de cadeaux pour les autres : Noël, anniversaire, baby shower…</p>${btn('lnew', 0, '＋ Créer une liste', 'pri')}${occChips(all)}<div style="margin-top:14px">${mine.map(listCard).join('') || '<p class="empty">Crée ta première liste. ✨</p>'}</div>`;
     }
     // Onglet « Partagées » : ce que je prépare avec d'autres + ce que je peux seulement consulter
-    const together = D.lists.filter(isCollab), readOnly = D.lists.filter((l) => l.role === 'reader');
+    const tAll = D.lists.filter(isCollab), rAll = D.lists.filter((l) => l.role === 'reader'), together = tAll.filter(byOcc), readOnly = rAll.filter(byOcc);
     return `<div class="section-head"><div><div class="small-label">Avec les autres</div><h2>Partagées 🤝</h2></div><span class="paper-note">${together.length + readOnly.length}</span></div>
       <p class="intro">Les listes que tu prépares avec quelqu'un, et celles qu'on a partagées avec toi.</p>
-      <div class="acts" style="margin-bottom:14px">${btn('lnewc', 0, '＋ Nouvelle liste à plusieurs', 'pri')}${btn('ljoin', 0, '🔗 Rejoindre avec un lien')}</div>
+      <div class="acts" style="margin-bottom:14px">${btn('lnewc', 0, '＋ Nouvelle liste à plusieurs', 'pri')}${btn('ljoin', 0, '🔗 Rejoindre avec un lien')}</div>${occChips([...tAll, ...rAll])}
       <div class="section-head"><h2>Préparées ensemble</h2><span class="paper-note">On modifie tous</span></div>
       ${together.map(listCard).join('') || '<p class="empty">Aucune liste à plusieurs pour l’instant.</p>'}
       <div class="section-head"><h2>À consulter</h2><span class="paper-note">Lecture seule, mise à jour en direct</span></div>
@@ -305,7 +307,7 @@
     return `<button class="ghost" data-a="tab" data-id="${back}">← Retour</button>
     <div class="section-head"><div><div class="small-label">${w ? 'Liste d’envies' : 'Le carnet de'}</div><h2>${esc(l.emoji)} ${esc(l.title)}</h2></div><span class="paper-note">${ROLE[l.role]}</span></div>
     ${l.role === 'reader' ? '<p class="banner">👀 Lecture seule : tu vois cette liste en direct, mais tu ne peux pas la modifier.</p>' : ''}
-    ${!w ? `<div class="card"><div class="top"><div><div class="small-label">La hotte</div><h4>${all.length} ${plural(all.length, 'idée', 'idées')} à préparer</h4></div><b style="font:700 22px var(--display)">${eur(sp)}</b></div>${has(l.budget) ? `<p class="note">Dépensé sur ${eur(l.budget)} prévus</p>` : ''}<div class="bar"><i style="width:${pc}%"></i></div></div>` : ''}
+    ${!w ? `<div class="card"><div class="top"><div><div class="small-label">Le budget</div><h4>${all.length} ${plural(all.length, 'idée', 'idées')} à préparer</h4></div><b style="font:700 22px var(--display)">${eur(sp)}</b></div>${has(l.budget) ? `<p class="note">Dépensé sur ${eur(l.budget)} prévus</p>` : ''}<div class="bar"><i style="width:${pc}%"></i></div></div>` : ''}
     <div class="acts" style="margin:12px 0">${ed ? btn('iadd', l.id, '＋ Ajouter', 'on') : ''}${ed && all.some((i) => i.link && !i.photo_path) ? btn('lfill', l.id, '🖼 Photos des liens (' + all.filter((i) => i.link && !i.photo_path).length + ')') : ''}${l.role === 'owner' ? btn('lshare', l.id, '👥 Partager') + btn('ledit', l.id, '✎ Modifier') + btn('ldel', l.id, 'Supprimer') : l.role === 'collaborator' ? btn('lmembers', l.id, '👥 Membres') + btn('lleave', l.id, 'Quitter') : btn('lleave', l.id, 'Quitter la liste')}</div>
     <div class="chips">${filters.map(([k, t]) => `<button class="chip ${F === k ? 'on' : ''}" data-a="filter" data-id="${k}">${t}</button>`).join('')}</div>
     ${shown.length ? `<div class="scrap-grid">${shown.map((i) => itemCard(l, i)).join('')}</div>` : `<p class="empty">${all.length ? 'Rien dans ce filtre.' : ed ? 'La page est encore blanche… à toi de la remplir ! ✂️' : 'Cette liste est vide pour le moment.'}</p>`}`;
@@ -367,11 +369,25 @@
     <p class="note" style="margin-top:12px">Les photos ne sont visibles qu’avec un compte (📌 « Garder »).</p>`;
   }
 
+  // ------------------------------------------------------------------ compte à rebours (prochaine occasion)
+  function updateCountdown() {
+    const el = $('#cd'); if (!el) return;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const c = [];
+    (D ? D.lists : []).forEach((l) => { if (l.event_date) { const d = new Date(l.event_date + 'T00:00:00'); if (d >= today) c.push({ d, e: (OCC[l.occasion] || OCC.christmas)[0], t: l.title }); } });
+    let x = new Date(today.getFullYear(), 11, 25); if (x < today) x = new Date(today.getFullYear() + 1, 11, 25);
+    c.push({ d: x, e: '🎄', t: 'Noël' });
+    c.sort((a, b) => a.d - b.d);
+    const n = c[0], days = Math.round((n.d - today) / 864e5);
+    el.textContent = days ? 'J-' + days + ' ' + n.e : 'C’est le jour ! ' + n.e;
+    el.title = n.t;
+  }
+
   // ------------------------------------------------------------------ rendu
   const TABS = [['home', '🏠', 'Atelier'], ['mine', '🎀', 'Mes listes'], ['shared', '🤝', 'Partagées']];
   function render() {
     const app = $('#app'), tabs = $('#tabs'), me = $('#me');
-    me.hidden = true; syncChip();
+    me.hidden = true; syncChip(); updateCountdown();
     if (S.pub) { app.innerHTML = viewPublic(); tabs.hidden = true; return; }
     if (S.recovery) { app.innerHTML = viewRecovery(); tabs.hidden = true; return; }
     if (S.loading && !S.user) { app.innerHTML = '<p class="empty">Chargement…</p>'; tabs.hidden = true; return; }
@@ -388,17 +404,22 @@
   function listForm(l, mode) {
     const edit = !!l, gifts = edit ? l.kind === 'gifts_for' : mode !== 'wishes';
     return form({
-      title: edit ? 'Modifier la liste' : mode === 'wishes' ? 'Mes envies 🎀' : mode === 'collab' ? 'Liste collaborative 🤝' : 'Un carnet de cadeaux 🎁',
+      title: edit ? 'Modifier la liste' : mode === 'wishes' ? 'Mes envies 🎀' : mode === 'collab' ? 'Liste à plusieurs 🤝' : 'Un carnet de cadeaux 🎁',
       sub: edit ? '' : gifts ? 'Pour qui prépares-tu des cadeaux ? Le carnet reste secret.' : 'Une liste d’envies, que tu pourras partager avec ta famille.',
       submit: edit ? 'Enregistrer' : 'Créer',
       fields: [
         { k: 'title', l: gifts ? 'Pour qui ?' : 'Titre', v: l ? l.title : mode === 'wishes' ? 'Mes envies' : '', r: 1, max: 120, ph: gifts ? 'Maman, Paul…' : '' },
+        { k: 'occasion', l: 'Pour quelle occasion ?', t: 'sel', v: l ? l.occasion || 'christmas' : 'christmas', o: Object.entries(OCC).map(([k, v]) => [k, v[0] + ' ' + v[1]]) },
         ...(gifts ? [{ k: 'budget', l: 'Budget (facultatif, en €)', t: 'number', v: l ? l.budget : '' }] : []),
-        { k: 'emoji', l: 'Emoji (facultatif)', v: l ? l.emoji : gifts ? '🎁' : '🎀', max: 16 }
+        { t: 'html', html: '<details class="more"><summary>Plus d’options (date, emoji)</summary>' },
+        { k: 'event_date', l: 'Date de l’occasion (pour le compte à rebours)', t: 'date', v: l ? l.event_date || '' : '' },
+        { k: 'emoji', l: 'Emoji (facultatif)', v: l ? l.emoji : gifts ? '🎁' : '🎀', max: 16 },
+        { t: 'html', html: '</details>' }
       ],
       onSubmit: async (o) => {
-        if (edit) { await api.updateList(l.id, { title: o.title, emoji: o.emoji, ...(l.kind === 'gifts_for' ? { budget: o.budget } : {}) }); await refresh(true); return; }
-        const nl = await api.createList({ title: o.title, emoji: o.emoji, kind: gifts ? 'gifts_for' : 'wishes', budget: o.budget });
+        if (edit) { await api.updateList(l.id, { title: o.title, emoji: o.emoji, occasion: o.occasion, eventDate: o.event_date, ...(l.kind === 'gifts_for' ? { budget: o.budget } : {}) }); await refresh(true); return; }
+        const nl = await api.createList({ title: o.title, emoji: o.emoji, kind: gifts ? 'gifts_for' : 'wishes', budget: o.budget, occasion: o.occasion, eventDate: o.event_date });
+        if (api.needsMigration5) toast('Liste créée, mais l’occasion n’est pas encore enregistrée : la base doit être mise à jour (migration 5).');
         await refresh(true); S.tab = 'detail'; S.lid = nl.id; S.filter = 'all'; render();
         if (mode === 'collab') setTimeout(() => openShare(nl.id), 100);
       }
@@ -665,6 +686,7 @@
     amode: (id) => { S.authMode = id; S.notice = ''; render(); },
     me: () => ACT.tab(S.tab === 'profile' ? 'home' : 'profile'),
     filter: (id) => { S.filter = id; render(); },
+    occ: (id) => { S.occ = id; render(); },
     lopen: (id) => { S.tab = 'detail'; S.lid = id; S.filter = 'all'; render(); window.scrollTo(0, 0); },
     lnew: async () => { const k = await choose('Que veux-tu créer ?', [{ v: 'wishes', l: '🎀 Une liste d’envies (à partager)' }, { v: 'gifts', l: '🎁 Un carnet de cadeaux pour quelqu’un' }]); if (k) listForm(null, k); },
     lnewc: () => listForm(null, 'collab'), ljoin: () => joinDialog(),
@@ -766,8 +788,7 @@
   // ------------------------------------------------------------------ démarrage
   async function boot(client) {
     sb = client; api = root.V2API.makeApi(sb, root.CFG);
-    const days = Math.max(0, Math.ceil((new Date(2026, 11, 25) - new Date()) / 864e5));
-    $('#cd').textContent = days ? 'J-' + days + ' ✨' : 'C’est Noël ! 🎅';
+    updateCountdown();
     sb.auth.onAuthStateChange((ev, session) => {
       setTimeout(async () => {
         try {
