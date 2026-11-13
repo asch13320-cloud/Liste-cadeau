@@ -23,17 +23,20 @@ function fakeSb(opts = {}) {
     async function run() {
       st.calls.push(table + ':' + q.op);
       if (st.offline) return { data: null, error: { message: 'Failed to fetch' } };
+      if (st.noPhotosCol && table === 'items' && (q.op === 'insert' || q.op === 'update') && q.p && 'photo_paths' in [].concat(q.p)[0]) return { data: null, error: { message: "Could not find the 'photo_paths' column of 'items' in the schema cache" } };
       const rows = db[table]; let out = [];
       if (q.op === 'insert') {
         out = [].concat(q.p).map((r) => {
           const base = { id: nid(), created_at: new Date().toISOString() };
           if (table === 'items') Object.assign(base, { version: 1, favorite: false, bought: false, wrapped: false, created_by: me() && me().id, photo_path: null, link_title: null });
           if (table === 'lists') Object.assign(base, { emoji: '🎀', budget: null });
-          return { ...base, ...r };
+          const row = { ...base, ...r };
+          if (table === 'items') { row.photo_paths = row.photo_paths || []; if (row.photo_paths.length) row.photo_path = row.photo_paths[0]; }
+          return row;
         });
         out.forEach((r) => { rows.push(r); if (table === 'lists') db.list_members.push({ list_id: r.id, user_id: r.owner_id, role: 'owner' }); });
       } else if (q.op === 'update') {
-        out = rows.filter((r) => q.f.every((f) => f(r))); out.forEach((r) => { Object.assign(r, q.p); if (table === 'items') r.version++; });
+        out = rows.filter((r) => q.f.every((f) => f(r))); out.forEach((r) => { Object.assign(r, q.p); if (table === 'items') { r.version++; if ('photo_paths' in q.p) r.photo_path = (q.p.photo_paths || [])[0] || null; else if ('photo_path' in q.p) r.photo_paths = q.p.photo_path ? [q.p.photo_path] : []; } });
       } else if (q.op === 'delete') {
         out = rows.filter((r) => q.f.every((f) => f(r))); out.forEach((r) => rows.splice(rows.indexOf(r), 1));
       } else if (q.op === 'upsert') {
@@ -368,6 +371,79 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   const w3 = await boot({ setup: (F) => { seedSession(F); const rows = F.db.lists; const origFrom = F.sb.from; F.sb.from = (tb) => { const b = origFrom(tb); if (tb !== 'lists') return b; const ins = b.insert; b.insert = (p) => { if (p && p.occasion !== undefined) { return { select: () => ({ single: async () => ({ data: null, error: { message: "Could not find the 'occasion' column of 'lists' in the schema cache" } }) }) }; } return ins(p); }; return b; }; } });
   await click(w3, '[data-id="mine"]'); await click(w3, '[data-a="lnew"]'); await click(w3, '#dlg [data-i="0"]'); const fm = $(w3, '#f'); setv(fm, 'title', 'Mes envies'); await submit(w3, fm); await sleep(150);
   t('migration 5 pas encore lancée : la liste est créée quand même', w3.__F.db.lists.some((l) => l.title === 'Mes envies') && /migration 5/.test(($(w3, '#toast') || {}).textContent || ''));
+
+
+  // 14. budget : décocher « Trouvé » rend l'argent ; plusieurs photos en carrousel
+  const P6 = (l, i) => l + '/' + i + '/' + nid() + '.jpg';
+  const reload = async (w) => { w.document.dispatchEvent(new w.Event('visibilitychange')); await sleep(250); };
+  const mkFile = (w, n) => new w.File(['x' + n], 'p' + n + '.png', { type: 'image/png' });
+  const withFiles = (w, input, files) => Object.defineProperty(input, 'files', { value: files, configurable: true });
+  w = await boot({ setup: (F) => {
+    seedSession(F); const G = nid(), W = nid(), it1 = nid(); F.ids = { G, W, it1 };
+    F.db.lists.push({ id: G, owner_id: ME.id, kind: 'gifts_for', title: 'Maman', emoji: '🎁', budget: 100, occasion: 'christmas', created_at: '1' }, { id: W, owner_id: ME.id, kind: 'wishes', title: 'Mes envies', emoji: '🎀', occasion: 'christmas', created_at: '2' });
+    F.db.list_members.push({ list_id: G, user_id: ME.id, role: 'owner' }, { list_id: W, user_id: ME.id, role: 'owner' });
+    F.db.items.push({ id: it1, list_id: G, name: 'Écharpe', est_price: 30, spent: 30, bought: true, version: 1, created_at: '3', photo_paths: [] });
+  } });
+  w.V2API.resizeImage = async (b) => b;
+  t('budget : l’argent dépensé est déduit (100 − 30)', /70 €/.test($(w, '#app').textContent) && /Sur 100 € prévus/.test($(w, '#app').textContent));
+  await click(w, '[data-id="mine"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent)));
+  t('carnet : dépensé affiché une fois trouvé', /30 €/.test($(w, '#app').textContent));
+  await click(w, '[data-a="ibuy"]');
+  t('décocher « Trouvé » : le carnet ne compte plus la dépense', w.__F.db.items[0].bought === false && !/Dépensé : 30/.test($(w, '#app').textContent) && /0 €/.test($(w, '.card .top b').textContent));
+  await click(w, '[data-id="home"]');
+  t('décocher « Trouvé » : le budget restant revient à 100 €', /100 €/.test($$(w, '.card').find((c) => /Budget restant/.test(c.textContent)).textContent));
+  t('… sans perdre le montant saisi (il revient si on recoche)', w.__F.db.items[0].spent === 30);
+  await click(w, '[data-id="mine"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent))); await click(w, '[data-a="ibuy"]'); await click(w, '[data-id="home"]');
+  t('recocher « Trouvé » : 70 € restants de nouveau', w.__F.db.items[0].bought === true && /70 €/.test($$(w, '.card').find((c) => /Budget restant/.test(c.textContent)).textContent));
+
+  // plusieurs photos
+  await click(w, '[data-id="mine"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent)));
+  await click(w, '[data-a="iadd"]'); let fp = $(w, '#f'); setv(fp, 'name', 'Plaid'); withFiles(w, $(w, '#f input[type=file]'), [mkFile(w, 1), mkFile(w, 2), mkFile(w, 3)]);
+  t('formulaire : plusieurs photos acceptées d’un coup', $(w, '#f input[type=file]').multiple === true && /10 maximum/.test($(w, '#f').textContent));
+  await submit(w, fp); await sleep(200);
+  const pl = w.__F.db.items.find((i) => i.name === 'Plaid');
+  t('3 photos envoyées et enregistrées dans l’ordre', pl && pl.photo_paths.length === 3 && w.__F.st.uploads.length === 3 && pl.photo_path === pl.photo_paths[0]);
+  await sleep(100);
+  const car = $(w, '.car');
+  t('carte : carrousel avec les 3 photos à faire défiler', !!car && car.querySelectorAll('.strip > img.ph').length === 3 && /1\/3/.test($(w, '.car .cnt').textContent) && !!$(w, '.car .nav.next') && !!$(w, '.car .nav.prev'));
+  t('carte : photos du carnet recadrées comme avant', /height:110px;object-fit:cover/.test(car.querySelector('img').getAttribute('style') || ''));
+  t('cadeau sans photo multiple : aucune barre de défilement', $$(w, '.car').length === 1);
+  // édition : retirer / mettre en couverture
+  await click(w, `[data-a="iedit"][data-id="${pl.id}"]`);
+  t('édition : les 3 photos sont listées avec « couverture »', $$(w, '#pstrip .th').length === 3 && /couverture/.test($(w, '#pstrip').textContent));
+  const bph = pl.photo_paths.slice();
+  await click(w, '#pstrip [data-ph="cover"][data-i="2"]');
+  t('édition : ★ met la photo en première', $$(w, '#pstrip .th img')[0].dataset.photo === bph[2]);
+  await click(w, '#pstrip [data-ph="rm"][data-i="1"]');
+  t('édition : ✕ retire la photo de la liste', $$(w, '#pstrip .th').length === 2);
+  await submit(w, $(w, '#f')); await sleep(200);
+  const pl2 = w.__F.db.items.find((i) => i.name === 'Plaid');
+  t('enregistré : nouvel ordre, une photo en moins', pl2.photo_paths.length === 2 && pl2.photo_paths[0] === bph[2] && pl2.photo_path === bph[2]);
+  t('photo retirée supprimée du stockage', w.__F.st.removed.includes(bph[0]) && !w.__F.st.removed.includes(bph[2]));
+  // limite
+  const many = Array.from({ length: 10 }, (_, i) => P6(w.__F.ids.G, pl2.id));
+  w.__F.db.items.find((i) => i.name === 'Plaid').photo_paths = many; w.__F.db.items.find((i) => i.name === 'Plaid').version++;
+  await reload(w); await click(w, '[data-id="home"]'); await click(w, '[data-id="mine"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent)));
+  await click(w, `[data-a="iedit"][data-id="${pl2.id}"]`); withFiles(w, $(w, '#f input[type=file]'), [mkFile(w, 9)]); await submit(w, $(w, '#f')); await sleep(120);
+  t('limite : 11 photos refusées, message DANS la fenêtre', $(w, '#dlg').open && /10 photos maximum/.test($(w, '#ferr').textContent));
+  await click(w, '[data-close]');
+  // ancien cadeau (une seule photo, ancien format) : toujours affiché, sans carrousel
+  const old = P6(w.__F.ids.G, nid());
+  w.__F.db.items.push({ id: nid(), list_id: w.__F.ids.G, name: 'Ancien', photo_path: old, version: 1, created_at: '9' });
+  await reload(w); await click(w, '[data-id="home"]'); await click(w, '[data-id="mine"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent))); await sleep(100);
+  t('ancien cadeau à 1 photo : affiché normalement (pas de carrousel)', $$(w, 'img.ph[data-photo="' + old + '"]').length === 1 && !$$(w, '.car').some((c) => c.querySelector('img[data-photo="' + old + '"]')));
+  // base sans la migration 6 : on garde la 1re photo et on prévient
+  w.__F.st.noPhotosCol = true;
+  await click(w, '[data-a="iadd"]'); const fq = $(w, '#f'); setv(fq, 'name', 'Sans migration'); withFiles(w, $(w, '#f input[type=file]'), [mkFile(w, 4), mkFile(w, 5)]); await submit(w, fq); await sleep(200);
+  const sm = w.__F.db.items.find((i) => i.name === 'Sans migration');
+  t('migration 6 absente : cadeau créé avec sa 1re photo, message clair', sm && !!sm.photo_path && /migration 6/.test(($(w, '#toast') || {}).textContent || ''));
+  w.__F.st.noPhotosCol = false;
+  // déplacement : toutes les photos suivent
+  const mv = w.__F.db.items.find((i) => i.name === 'Plaid'); const L2 = [P6(w.__F.ids.G, mv.id), P6(w.__F.ids.G, mv.id)]; mv.photo_paths = L2; mv.photo_path = L2[0]; mv.version++;
+  await reload(w); await click(w, '[data-id="home"]'); await click(w, '[data-id="mine"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent)));
+  await click(w, `[data-a="imove"][data-id="${mv.id}"]`); await click(w, '#dlg [data-i="0"]'); await sleep(250);
+  const moved = w.__F.db.items.find((i) => i.name === 'Plaid' && i.list_id === w.__F.ids.W);
+  t('déplacement : les 2 photos suivent le cadeau', moved && moved.photo_paths.length === 2 && moved.photo_paths.every((p) => p.startsWith(w.__F.ids.W + '/')) && !w.__F.db.items.some((i) => i.id === mv.id) && L2.every((p) => w.__F.st.removed.includes(p)));
 
   // 10. déconnexion
   await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);

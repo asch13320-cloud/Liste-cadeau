@@ -39,6 +39,9 @@
   const occ = (v) => (OCCS.includes(v) ? v : 'christmas');
   const day = (v) => { const x = String(v || '').trim(); if (!x) return null; if (!/^\d{4}-\d{2}-\d{2}$/.test(x) || isNaN(new Date(x + 'T12:00:00'))) throw uerr('Date invalide.'); return x; };
   const noOccCol = (e) => e && /occasion|event_date/.test(String(e.message || '')) && /column|schema cache/i.test(String(e.message || ''));
+  const PATH_RE = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\/[A-Za-z0-9._-]{1,80}$/;
+  const photoList = (it) => (it && Array.isArray(it.photo_paths) && it.photo_paths.length ? it.photo_paths : it && it.photo_path ? [it.photo_path] : []);
+  const noPhotosCol = (e) => e && /photo_paths/.test(String(e.message || '')) && /column|schema cache/i.test(String(e.message || ''));
   const safeUrl = (u) => {
     const v = String(u || '').trim();
     if (!v) return null;
@@ -72,6 +75,7 @@
     if ('link_image' in f) { try { o.link_image = safeUrl(f.link_image); } catch (e) { o.link_image = null; } }
     if ('link_price' in f) { try { const p = num(f.link_price); o.link_price = p && p > 0 ? p : null; } catch (e) { o.link_price = null; } }
     if ('photo_path' in f) o.photo_path = f.photo_path || null;
+    if ('photo_paths' in f) { const a = Array.isArray(f.photo_paths) ? f.photo_paths : []; if (a.length > 10) throw uerr('10 photos maximum par cadeau.'); o.photo_paths = a.filter((x) => typeof x === 'string' && PATH_RE.test(x)); }
     return o;
   }
 
@@ -173,22 +177,28 @@
     };
 
     // ---------- Cadeaux
+    // Si la base n'a pas encore la migration 6 (plusieurs photos), on garde au moins la 1re photo.
+    const downgrade = (row) => { if ('photo_paths' in row) { const a = row.photo_paths; delete row.photo_paths; row.photo_path = a && a.length ? a[0] : null; api.needsMigration6 = true; } return row; };
     api.createItem = async (listId, fields, id) => {
       const row = { ...cleanItem(fields), list_id: listId }; if (id) row.id = id;
-      const r = await sb.from('items').insert(row).select().single();
+      let r = await sb.from('items').insert(row).select().single();
+      if (r.error && noPhotosCol(r.error)) r = await sb.from('items').insert(downgrade(row)).select().single();
       return must(r);
     };
     api.updateItem = async (item, patch) => {
-      const r = await sb.from('items').update(cleanItem(patch)).eq('id', item.id).eq('version', item.version).select().maybeSingle();
+      const p = cleanItem(patch);
+      let r = await sb.from('items').update(p).eq('id', item.id).eq('version', item.version).select().maybeSingle();
+      if (r.error && noPhotosCol(r.error)) r = await sb.from('items').update(downgrade(p)).eq('id', item.id).eq('version', item.version).select().maybeSingle();
       if (r.error) throw r.error;
       if (!r.data) { const e = new Error('conflict'); e.conflict = true; throw e; }
       return r.data;
     };
     api.deleteItem = async (item) => {
-      if (item.photo_path) await sb.storage.from(BUCKET).remove([item.photo_path]).catch(() => {});
+      const ps = photoList(item); if (ps.length) await sb.storage.from(BUCKET).remove(ps).catch(() => {});
       const r = await sb.from('items').delete().eq('id', item.id).select();
       if (!must(r).length) throw new Error('forbidden');
     };
+    api.removePhotos = async (paths) => { if (paths && paths.length) await sb.storage.from(BUCKET).remove(paths); };
     api.setPrivateNote = async (itemId, notes) => {
       const n = txt(notes, 2000);
       if (!n) { const r = await sb.from('item_private_notes').delete().eq('item_id', itemId); if (r.error) throw r.error; return; }
@@ -278,5 +288,5 @@
     return api;
   }
 
-  root.V2API = { makeApi, friendly, isNetworkError, resizeImage, dataUrlToBlob, cleanItem, safeUrl, newId };
+  root.V2API = { photoList, makeApi, friendly, isNetworkError, resizeImage, dataUrlToBlob, cleanItem, safeUrl, newId };
 })(typeof window !== 'undefined' ? window : globalThis);

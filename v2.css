@@ -36,3 +36,18 @@ header{padding-top:34px}
 .eye{border:2px solid var(--ink);background:var(--paper2);border-radius:3px;padding:0 10px;font-size:16px}
 details.more{margin:6px 0;border:1.5px dashed var(--ink);border-radius:3px;padding:8px 10px;background:var(--paper)}
 details.more summary{cursor:pointer;font:700 14px var(--font);padding:2px 0}
+
+/* Carrousel de photos (balayer pour faire défiler) */
+.car{position:relative;margin:2px 0 12px}
+.car .strip{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.car .strip::-webkit-scrollbar{display:none}
+.car .strip>.ph{flex:0 0 100%;min-width:0;box-sizing:border-box;scroll-snap-align:center;margin:0}
+.car .cnt{position:absolute;right:8px;bottom:8px;background:rgba(42,31,23,.72);color:#fffaf0;font:700 11px var(--font);padding:1px 9px;border-radius:99px;pointer-events:none}
+.car .nav{position:absolute;top:50%;transform:translateY(-50%);width:28px;height:28px;padding:0;border-radius:50%;border:1.5px solid var(--ink);background:rgba(255,250,240,.88);color:var(--ink);font:700 18px/1 var(--font);display:grid;place-items:center;opacity:.9}
+.car .nav.prev{left:4px}.car .nav.next{right:4px}
+.pstrip{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.pstrip .th{position:relative;width:74px;height:74px;border:1.5px solid var(--ink);border-radius:3px;background:#fff;overflow:hidden}
+.pstrip .th img{width:100%;height:100%;object-fit:cover;display:block}
+.pstrip .th button{position:absolute;top:2px;width:22px;height:22px;padding:0;border-radius:50%;border:1.5px solid var(--ink);background:rgba(255,250,240,.92);font-size:11px;line-height:1}
+.pstrip .th button[data-ph=rm]{right:2px}.pstrip .th button[data-ph=cover]{left:2px}
+.pstrip .cov{position:absolute;left:0;right:0;bottom:0;background:rgba(42,31,23,.72);color:#fffaf0;font:700 10px var(--font);text-align:center;padding:1px 0}
