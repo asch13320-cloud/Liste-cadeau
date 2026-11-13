@@ -5,6 +5,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const safe = (u) => (/^https?:\/\//i.test(u || '') ? u : '');
   const eur = (n) => (Math.round((+n || 0) * 100) / 100).toLocaleString('fr-FR') + ' €';
+  const photoList = (it) => root.V2API.photoList(it);
   const has = (v) => v !== '' && v != null;
   const plural = (n, a, b) => (n > 1 ? b : a);
 
@@ -54,6 +55,7 @@
     if (f.t === 'html') return f.html;
     if (f.t === 'sel') return `${lab}<select id="${id}" name="${f.k}">${f.o.map(([v, t]) => `<option value="${esc(v)}" ${v === f.v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label>`;
     if (f.t === 'area') return `${lab}<textarea id="${id}" name="${f.k}" rows="3" maxlength="2000">${esc(f.v)}</textarea></label>`;
+    if (f.t === 'photos') return `<label for="${id}">${f.l}</label><div id="pstrip" class="pstrip"></div><input id="${id}" type="file" name="${f.k}" accept="image/*" multiple><p class="note" id="pnew" style="margin:4px 0 0"></p>`;
     if (f.t === 'photo') return `${lab}<input id="${id}" type="file" name="${f.k}" accept="image/*">${f.has ? `<span style="font-weight:600"><input type="checkbox" name="${f.k}_remove"> Supprimer la photo actuelle</span>` : ''}</label>`;
     if (f.t === 'check') return `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="${f.k}" ${f.v ? 'checked' : ''}> ${f.l}</label>`;
     const num = f.t === 'number';
@@ -106,6 +108,12 @@
   document.addEventListener('error', (e) => {
     const t = e.target;
     if (t && t.tagName === 'IMG' && t.dataset.fb !== undefined) { const g = t.dataset.fb === 'g', d = document.createElement('div'); d.className = 'ph'; d.style.cssText = g ? 'height:80px;display:grid;place-items:center;font-size:40px' : 'height:112px;display:grid;place-items:center;font-size:52px'; d.textContent = '✂️'; t.replaceWith(d); }
+  }, true);
+
+  // compteur « 2/3 » du carrousel
+  document.addEventListener('scroll', (e) => {
+    const st = e.target;
+    if (st && st.classList && st.classList.contains('strip') && st.clientWidth) { const c = st.parentNode.querySelector('.cnt'); if (c) c.textContent = Math.min(st.children.length, Math.round(st.scrollLeft / st.clientWidth) + 1) + '/' + st.children.length; }
   }, true);
 
   // ------------------------------------------------------------------ chargement des données
@@ -212,8 +220,10 @@
   const btn = (a, id, l, c) => `<button data-a="${a}" data-id="${esc(id)}" class="${c || ''}">${l}</button>`;
   // Même rendu que l'ancienne version : envies = photo entière dans son cadre blanc ; carnets = photo recadrée.
   function itemPhoto(it, w) {
-    const st = w ? '' : ' style="height:110px;object-fit:cover"', fb = w ? 'w' : 'g';
-    if (it.photo_path) return `<img class="ph" data-photo="${esc(it.photo_path)}" data-fb="${fb}" alt="" loading="lazy"${st}>`;
+    const st = w ? '' : ' style="height:110px;object-fit:cover"', fb = w ? 'w' : 'g', ps = photoList(it);
+    const mk = (p) => `<img class="ph" data-photo="${esc(p)}" data-fb="${fb}" alt="" loading="lazy"${st}>`;
+    if (ps.length === 1) return mk(ps[0]);
+    if (ps.length > 1) return `<div class="car"><div class="strip">${ps.map(mk).join('')}</div><span class="cnt">1/${ps.length}</span><button class="nav prev" data-a="cnav" data-id="prev" aria-label="Photo précédente">‹</button><button class="nav next" data-a="cnav" data-id="next" aria-label="Photo suivante">›</button></div>`;
     if (safe(it.link_image)) return `<img class="ph" src="${esc(it.link_image)}" referrerpolicy="no-referrer" loading="lazy" data-fb="${fb}" alt=""${st}>`;
     return w ? '<div class="ph" style="height:112px;display:grid;place-items:center;font-size:52px">✂️</div>'
       : `<div class="ph" style="height:80px;display:grid;place-items:center;font-size:40px">${it.bought ? '🎁' : '✂️'}</div>`;
@@ -252,11 +262,12 @@
   }
 
   // ------------------------------------------------------------------ vues
+  const spentOf = (items) => sum(items.filter((i) => i.bought).map((i) => i.spent)); // décocher « Trouvé » rend l'argent au budget
   function sum(a) { return a.reduce((s, x) => s + (+x || 0), 0); }
 
   function viewHome() {
     const gl = D.lists.filter((l) => l.kind === 'gifts_for' && canEdit(l)), gi = gl.flatMap((l) => itemsOf(l.id));
-    const bud = sum(gl.map((l) => l.budget)), sp = sum(gi.map((i) => i.spent));
+    const bud = sum(gl.map((l) => l.budget)), sp = spentOf(gi);
     return `<section class="cover"><div class="cover-copy"><div class="edition">Édition spéciale · Hiver 2026</div><h2>La magie<br>des envies.</h2><p>Un petit carnet de choses qui me feraient plaisir…</p></div><div class="cover-stamp">100%<br>envies<br> choisies</div><div class="cover-art">🎄</div></section>
     ${!D.me.name && !localStorage.getItem('noel_nameasked') ? `<form id="nameform" class="card"><div class="small-label">Pour tes proches (facultatif)</div><h4>Comment t’appelles-tu ?</h4><p class="note">Ton prénom s’affiche pour les personnes avec qui tu partages une liste.</p><div class="qa"><input name="name" maxlength="60" placeholder="Ton prénom" aria-label="Prénom"><button class="pri">OK</button></div><button type="button" class="ghost" data-a="later">Plus tard</button></form>` : ''}
     ${!D.lists.length ? `<div class="card"><div class="small-label">Bienvenue 🎄</div><h4>Par où commencer ?</h4><div class="acts" style="flex-direction:column;align-items:stretch">${btn('start', 'wish', '🎀 Noter mes envies', 'pri')}${btn('start', 'gift', '🎁 Préparer des cadeaux pour quelqu’un')}${legacyData() ? btn('tab', 'profile', '📦 Récupérer mon ancienne version') : ''}</div></div>` : ''}
@@ -302,13 +313,13 @@
     const all = itemsOf(l.id), ed = canEdit(l), w = l.kind === 'wishes', F = S.filter;
     const filters = w ? [['all', 'Tout'], ['idea', 'Idée'], ['wish', 'Envie'], ['received', 'Reçu']] : [['all', 'Tout'], ['todo', 'À trouver'], ['bought', 'Trouvés'], ['wrapped', 'Emballés']];
     const shown = all.filter((i) => F === 'all' || (w ? i.status === F : F === 'todo' ? !i.bought : F === 'bought' ? i.bought : i.wrapped));
-    const sp = sum(all.map((i) => i.spent)), pc = has(l.budget) && +l.budget ? Math.min(100, (sp / l.budget) * 100) : 0;
+    const sp = spentOf(all), pc = has(l.budget) && +l.budget ? Math.min(100, (sp / l.budget) * 100) : 0;
     const back = l.role === 'reader' || isCollab(l) ? 'shared' : 'mine';
     return `<button class="ghost" data-a="tab" data-id="${back}">← Retour</button>
     <div class="section-head"><div><div class="small-label">${w ? 'Liste d’envies' : 'Le carnet de'}</div><h2>${esc(l.emoji)} ${esc(l.title)}</h2></div><span class="paper-note">${ROLE[l.role]}</span></div>
     ${l.role === 'reader' ? '<p class="banner">👀 Lecture seule : tu vois cette liste en direct, mais tu ne peux pas la modifier.</p>' : ''}
     ${!w ? `<div class="card"><div class="top"><div><div class="small-label">Le budget</div><h4>${all.length} ${plural(all.length, 'idée', 'idées')} à préparer</h4></div><b style="font:700 22px var(--display)">${eur(sp)}</b></div>${has(l.budget) ? `<p class="note">Dépensé sur ${eur(l.budget)} prévus</p>` : ''}<div class="bar"><i style="width:${pc}%"></i></div></div>` : ''}
-    <div class="acts" style="margin:12px 0">${ed ? btn('iadd', l.id, '＋ Ajouter', 'on') : ''}${ed && all.some((i) => i.link && !i.photo_path) ? btn('lfill', l.id, '🖼 Photos des liens (' + all.filter((i) => i.link && !i.photo_path).length + ')') : ''}${l.role === 'owner' ? btn('lshare', l.id, '👥 Partager') + btn('ledit', l.id, '✎ Modifier') + btn('ldel', l.id, 'Supprimer') : l.role === 'collaborator' ? btn('lmembers', l.id, '👥 Membres') + btn('lleave', l.id, 'Quitter') : btn('lleave', l.id, 'Quitter la liste')}</div>
+    <div class="acts" style="margin:12px 0">${ed ? btn('iadd', l.id, '＋ Ajouter', 'on') : ''}${ed && all.some((i) => i.link && !photoList(i).length) ? btn('lfill', l.id, '🖼 Photos des liens (' + all.filter((i) => i.link && !photoList(i).length).length + ')') : ''}${l.role === 'owner' ? btn('lshare', l.id, '👥 Partager') + btn('ledit', l.id, '✎ Modifier') + btn('ldel', l.id, 'Supprimer') : l.role === 'collaborator' ? btn('lmembers', l.id, '👥 Membres') + btn('lleave', l.id, 'Quitter') : btn('lleave', l.id, 'Quitter la liste')}</div>
     <div class="chips">${filters.map(([k, t]) => `<button class="chip ${F === k ? 'on' : ''}" data-a="filter" data-id="${k}">${t}</button>`).join('')}</div>
     ${shown.length ? `<div class="scrap-grid">${shown.map((i) => itemCard(l, i)).join('')}</div>` : `<p class="empty">${all.length ? 'Rien dans ce filtre.' : ed ? 'La page est encore blanche… à toi de la remplir ! ✂️' : 'Cette liste est vide pour le moment.'}</p>`}`;
   }
@@ -429,6 +440,7 @@
   function itemForm(l, it) {
     const w = l.kind === 'wishes', edit = !!it;
     let lp = it && (it.link_title || it.link_image) ? { title: it.link_title, image: it.link_image, description: it.link_description, price: it.link_price, url: it.link } : null;
+    let keep = it ? photoList(it).slice() : [];
     return form({
       title: edit ? 'Modifier ' + (w ? 'l’envie' : 'le cadeau') : w ? 'Nouvelle envie 🎀' : 'Nouveau cadeau pour ' + esc(l.title),
       fields: [
@@ -436,10 +448,10 @@
         { t: 'html', html: '<div id="lp"></div>' },
         { k: 'name', l: 'Cadeau', v: it ? it.name : '', r: 1, max: 200 },
         { k: 'est_price', l: 'Prix (€)', t: 'number', v: it ? it.est_price : '' },
-        { k: 'photo', l: 'Photo (téléphone ou ordinateur)', t: 'photo', has: !!(it && it.photo_path) },
+        { k: 'photo', l: 'Photos (téléphone ou ordinateur, 10 maximum)', t: 'photos' },
         { t: 'html', html: `<details class="more" ${edit ? 'open' : ''}><summary>Plus de détails (${w ? 'priorité, catégorie, ' : 'dépensé, '}notes…)</summary>` },
         ...(w ? [{ k: 'priority', l: 'Priorité', t: 'sel', v: it ? it.priority || 'like' : 'like', o: opts(PRIO) }, { k: 'category', l: 'Catégorie', t: 'sel', v: it ? it.category || 'other' : 'other', o: opts(CAT) }, { k: 'status', l: 'Statut', t: 'sel', v: it ? it.status || 'wish' : 'wish', o: opts(STAT) }]
-          : [{ k: 'spent', l: 'Dépensé réellement (€)', t: 'number', v: it ? it.spent : '' }]),
+          : [{ k: 'spent', l: 'Dépensé réellement (€) — compté dans le budget quand « Trouvé » est coché', t: 'number', v: it ? it.spent : '' }]),
         { k: 'notes', l: w ? 'Notes (couleur, taille, modèle… — vues par les personnes qui voient la liste)' : '🔒 Notes (vues par tous les membres de la liste)', t: 'area', v: it ? it.notes : '' },
         { k: 'private', l: '🔐 Ma note perso (visible par moi seulement)', t: 'area', v: it ? D.notes[it.id] || '' : '' },
         { t: 'html', html: '</details>' }
@@ -449,31 +461,46 @@
         if (w) Object.assign(patch, { priority: o.priority, category: o.category, status: o.status }); else patch.spent = o.spent;
         const sameLink = lp && o.link && lp.url === o.link;
         Object.assign(patch, sameLink ? { link_title: lp.title, link_image: lp.image, link_description: lp.description, link_price: lp.price } : { link_title: null, link_image: null, link_description: null, link_price: null });
-        const file = $('#f input[type=file]').files[0];
-        if (file && !/^image\//.test(file.type)) throw new Error('Ce fichier n’est pas une image.');
+        const files = [...$('#f input[type=file]').files];
+        if (files.some((x) => !/^image\//.test(x.type))) throw new Error('Un des fichiers n’est pas une image.');
+        if (keep.length + files.length > 10) throw new Error('10 photos maximum par cadeau (tu en as ' + (keep.length + files.length) + ').');
         const useSite = !!($('#usesite') && $('#usesite').checked);
         let saved;
         if (edit) saved = await api.updateItem(it, patch);
         else saved = await api.createItem(l.id, patch, newId());
-        const extra = {};
+        const orig = photoList(saved), added = [];
+        let photosDone = false;
         try {
-          if (file) { const path = await api.uploadPhoto(l.id, saved.id, file); if (saved.photo_path) await api.removePhoto(saved.photo_path).catch(() => {}); extra.photo_path = path; }
-          else if (o.photo_remove && saved.photo_path) { await api.removePhoto(saved.photo_path).catch(() => {}); extra.photo_path = null; }
-          else if (useSite && sameLink && lp.image && !saved.photo_path) {
-            // on garde une vraie copie de la photo du site : elle s'affichera toujours, même si le marchand la bloque
-            try { const raw = await api.fetchLinkImage(lp.image); const blob = await root.V2API.resizeImage(raw); extra.photo_path = await api.uploadPhoto(l.id, saved.id, blob, true); }
+          for (const file of files) { const blob = await root.V2API.resizeImage(file); added.push(await api.uploadPhoto(l.id, saved.id, blob, true)); }
+          if (!files.length && !keep.length && useSite && sameLink && lp.image) {
+            // copie de la photo du site : elle s'affichera toujours, même si le marchand la bloque
+            try { const blob = await root.V2API.resizeImage(await api.fetchLinkImage(lp.image)); added.push(await api.uploadPhoto(l.id, saved.id, blob, true)); }
             catch (e) { console.warn('photo du site non enregistrée', e); }
           }
-          if (Object.keys(extra).length) saved = await api.updateItem(saved, extra);
-          await api.setPrivateNote(saved.id, o.private);
-        } catch (e) { await refresh(true); throw new Error('Le cadeau est enregistré, mais : ' + api.friendly(e)); }
+          const final = keep.concat(added);
+          if (final.length !== orig.length || final.some((p, n) => p !== orig[n])) {
+            saved = await api.updateItem(saved, { photo_paths: final });
+            await api.removePhotos(orig.filter((p) => !final.includes(p))).catch(() => {});
+          }
+          photosDone = true;
+          if (api.needsMigration6 && final.length > 1) toast('Une seule photo gardée : la base doit être mise à jour pour en avoir plusieurs (migration 6).');
+        } catch (e) { await api.removePhotos(added.filter((p) => !photoList(saved).includes(p))).catch(() => {}); await refresh(true); throw new Error('Le cadeau est enregistré, mais : ' + api.friendly(e)); }
+        try { await api.setPrivateNote(saved.id, o.private); } catch (e) { await refresh(true); throw new Error('Le cadeau est enregistré, mais ta note perso ne l’est pas : ' + api.friendly(e)); }
         await refresh(true);
       },
       after: (f) => {
+        const strip = $('#pstrip', f), fi = $('input[type=file]', f);
+        const renderStrip = () => {
+          strip.innerHTML = keep.map((p, n) => `<span class="th"><img data-photo="${esc(p)}" alt="" data-fb="g"><button type="button" data-ph="rm" data-i="${n}" aria-label="Retirer cette photo">✕</button>${n ? `<button type="button" data-ph="cover" data-i="${n}" aria-label="Mettre en première">★</button>` : '<span class="cov">couverture</span>'}</span>`).join('');
+          hydratePhotos();
+        };
+        strip.addEventListener('click', (e) => { const b = e.target.closest('[data-ph]'); if (!b) return; const n = +b.dataset.i; if (b.dataset.ph === 'rm') keep.splice(n, 1); else keep.unshift(keep.splice(n, 1)[0]); renderStrip(); showLp(); });
+        fi.addEventListener('change', () => { $('#pnew', f).textContent = fi.files.length ? fi.files.length + ' photo' + (fi.files.length > 1 ? 's' : '') + ' à ajouter à l’enregistrement' : ''; });
+        renderStrip();
         const link = f.elements.link, box = $('#lp', f);
         const showLp = () => {
           if (!lp) { box.innerHTML = ''; return; }
-          const canKeep = lp.image && !(it && it.photo_path);
+          const canKeep = lp.image && !keep.length && !(it && photoList(it).length);
           box.innerHTML = `<div class="linkprev">${safe(lp.image) ? `<img src="${esc(lp.image)}" referrerpolicy="no-referrer" alt="" data-fb="g">` : ''}<div><b>${esc(lp.title || '')}</b>${lp.description ? `<div class="note">${esc(String(lp.description).slice(0, 140))}</div>` : ''}
             <div class="acts" style="margin-top:4px">${lp.title ? '<button type="button" id="usetitle">Utiliser le titre</button>' : ''}${lp.price ? `<button type="button" id="useprice">Prix du site : ${eur(lp.price)}</button>` : ''}</div>
             ${canKeep ? '<label style="display:flex;gap:6px;align-items:center;font-weight:600;margin-top:6px"><input type="checkbox" id="usesite" checked> Garder la photo du site</label>' : ''}</div></div>`;
@@ -495,7 +522,7 @@
         };
         link.addEventListener('change', () => preview(link.value.trim()));
         // cadeau déjà enregistré (ou importé) avec un lien mais sans photo : on cherche la photo tout de suite
-        if (edit && it.link && !it.photo_path && !(lp && lp.image)) preview(it.link);
+        if (edit && it.link && !photoList(it).length && !(lp && lp.image)) preview(it.link);
       }
     });
   }
@@ -613,7 +640,7 @@
         const src = m.legacy.startsWith('w:') ? photos[m.legacy] : photos[String(plegacy[m.list_id] || '').replace(/^p:/, '') + '|' + m.legacy];
         const blob = root.V2API.dataUrlToBlob(src);
         if (!blob) { upFail++; continue; }
-        try { const path = await api.uploadPhoto(m.list_id, m.item_id, blob, true); await api.updateItem({ id: cur.id, version: cur.version }, { photo_path: path }); up++; } catch (e) { console.warn(e); upFail++; }
+        try { const path = await api.uploadPhoto(m.list_id, m.item_id, blob, true); await api.updateItem({ id: cur.id, version: cur.version }, { photo_paths: [path] }); up++; } catch (e) { console.warn(e); upFail++; }
       }
       stage = 'vérification'; prog('Vérification…');
     } catch (e) { return importErr(stage, e); }
@@ -651,7 +678,7 @@
     return choose(title, ls.map((l) => ({ v: l.id, l: l.emoji + ' ' + l.title })), sub);
   }
   async function fillPhotos(lid) {
-    const l = list(lid), todo = itemsOf(lid).filter((i) => i.link && !i.photo_path);
+    const l = list(lid), todo = itemsOf(lid).filter((i) => i.link && !photoList(i).length);
     if (!todo.length) return toast('Tous les cadeaux avec un lien ont déjà leur photo.');
     let ok = 0, ko = 0, stop = false;
     const d = modal('<h3>🖼 Photos des liens</h3><p class="sub" id="fp">Je démarre…</p><p class="note">Garde l’application ouverte. Tu peux arrêter quand tu veux : ce qui est fait est conservé.</p><div class="row"><button class="ghost" data-close>Arrêter</button></div>');
@@ -663,7 +690,7 @@
         if (!(r && r.image)) { ko++; continue; }
         const blob = await root.V2API.resizeImage(await api.fetchLinkImage(r.image));
         const path = await api.uploadPhoto(l.id, it.id, blob, true);
-        await api.updateItem(it, { photo_path: path, link_title: it.link_title || r.title, link_image: r.image, link_description: it.link_description || r.description, link_price: r.price });
+        await api.updateItem(it, { photo_paths: [path], link_title: it.link_title || r.title, link_image: r.image, link_description: it.link_description || r.description, link_price: r.price });
         ok++;
       } catch (e) { console.warn(e); ko++; }
     }
@@ -677,7 +704,8 @@
     const f = { name: it.name, est_price: it.est_price, link: it.link, notes: it.notes, link_title: it.link_title, link_image: it.link_image, link_description: it.link_description, link_price: it.link_price };
     if (t.kind === 'wishes') Object.assign(f, { priority: it.priority || 'like', category: it.category || 'other', status: it.status || 'wish', favorite: it.favorite });
     const nid = newId(); let created = await api.createItem(targetId, f, nid);
-    if (it.photo_path) { try { const to = `${targetId}/${nid}/${newId()}.jpg`; await api.copyPhoto(it.photo_path, to); created = await api.updateItem(created, { photo_path: to }); } catch (e) { console.warn('photo non déplacée', e); } }
+    const ps = photoList(it);
+    if (ps.length) { const to = []; for (const p of ps) { try { const dest = `${targetId}/${nid}/${newId()}.jpg`; await api.copyPhoto(p, dest); to.push(dest); } catch (e) { console.warn('photo non déplacée', e); } } if (to.length) { try { created = await api.updateItem(created, { photo_paths: to }); } catch (e) { console.warn(e); } } }
     await api.deleteItem(it);
   }
 
@@ -685,6 +713,7 @@
     tab: (id) => { S.tab = id; S.lid = null; S.filter = 'all'; render(); window.scrollTo(0, 0); },
     amode: (id) => { S.authMode = id; S.notice = ''; render(); },
     me: () => ACT.tab(S.tab === 'profile' ? 'home' : 'profile'),
+    cnav: (id, el) => { const st = el.parentNode.querySelector('.strip'); if (st && st.scrollBy) st.scrollBy({ left: (id === 'next' ? 1 : -1) * st.clientWidth, behavior: 'smooth' }); return false; },
     filter: (id) => { S.filter = id; render(); },
     occ: (id) => { S.occ = id; render(); },
     lopen: (id) => { S.tab = 'detail'; S.lid = id; S.filter = 'all'; render(); window.scrollTo(0, 0); },
@@ -704,7 +733,7 @@
     ldel: async (id) => {
       const l = list(id), n = itemsOf(id).length;
       if (!(await confirmDel('« ' + l.title + ' » et ses ' + n + ' ' + plural(n, 'cadeau', 'cadeaux') + ' seront supprimés pour tous les membres.'))) return;
-      try { await api.deleteList(id, itemsOf(id).map((i) => i.photo_path).filter(Boolean)); S.tab = 'mine'; S.lid = null; await refresh(true); } catch (e) { fail(e); }
+      try { await api.deleteList(id, itemsOf(id).flatMap(photoList)); S.tab = 'mine'; S.lid = null; await refresh(true); } catch (e) { fail(e); }
     },
     lleave: async (id) => {
       if (!(await choose('Quitter cette liste ?', [{ v: 1, l: 'Oui, quitter' }], 'Tu ne la verras plus (le propriétaire peut te réinviter).'))) return;

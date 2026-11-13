@@ -208,6 +208,24 @@ t('occasion : date invalide refusée', !!(await as('A', () => err(q("update list
 t('occasion : un lecteur/collaborateur ne la modifie pas', await (async () => { const tk = await link('A', OL.id, 'collaborator', 24, 1); await as('B', () => q('select redeem_invite($1)', [tk])); return as('B', async () => (await q("update lists set occasion='wedding' where id=$1 returning 1", [OL.id])).length === 0); })());
 t('occasion : les 5 occasions acceptées', await as('A', async () => { for (const o of ['christmas', 'birthday', 'baby_shower', 'wedding', 'other']) await q("update lists set occasion=$2 where id=$1", [OL.id, o]); return true; }));
 
+
+// --- plusieurs photos par cadeau (migration 6)
+const PL = (await as('A', () => q("insert into lists (owner_id,title) values ($1,'Photos') returning id", [U.A])))[0].id;
+const PI = (await as('A', () => q("insert into items (list_id,name) values ($1,'Cadeau photos') returning id", [PL])))[0].id;
+const ph = (n) => `${PL}/${PI}/${'0123456789abcdef0123456789abcdef'.slice(0, 8)}-${n}.jpg`;
+const paths3 = [ph(1), ph(2), ph(3)];
+const r6 = await as('A', () => q('update items set photo_paths=$2 where id=$1 returning photo_path, photo_paths', [PI, paths3]));
+t('photos : 3 photos enregistrées dans l’ordre, la 1re est la couverture', JSON.stringify(r6[0].photo_paths) === JSON.stringify(paths3) && r6[0].photo_path === paths3[0]);
+t('photos : on peut réordonner (nouvelle couverture)', (await as('A', () => q('update items set photo_paths=$2 where id=$1 returning photo_path', [PI, [ph(3), ph(1), ph(2)]])))[0].photo_path === ph(3));
+t('photos : liste vide → plus de couverture', (await as('A', () => q("update items set photo_paths='{}' where id=$1 returning photo_path", [PI])))[0].photo_path === null);
+t('photos : ancien client (écrit photo_path seul) → liste synchronisée', JSON.stringify((await as('A', () => q('update items set photo_path=$2 where id=$1 returning photo_paths', [PI, ph(9)])))[0].photo_paths) === JSON.stringify([ph(9)]));
+t('photos : ancien client qui efface photo_path → liste vidée', (await as('A', () => q('update items set photo_path=null where id=$1 returning photo_paths', [PI])))[0].photo_paths.length === 0);
+t('photos : 10 maximum', !!(await as('A', () => err(q('update items set photo_paths=$2 where id=$1', [PI, Array.from({ length: 11 }, (_, i) => ph(i))])))) && !(await as('A', () => err(q('update items set photo_paths=$2 where id=$1', [PI, Array.from({ length: 10 }, (_, i) => ph(i))])))));
+t('photos : chemin hors format refusé', !!(await as('A', () => err(q("update items set photo_paths=array['../../etc/passwd'] where id=$1", [PI])))));
+t('photos : lecteur/étranger ne peut pas modifier les photos', await (async () => { const tk = await link('A', PL, 'reader', 24, 1); await as('C', () => q('select redeem_invite($1)', [tk])); return (await as('C', async () => (await q('update items set photo_paths=$2 where id=$1 returning 1', [PI, [ph(1)]])).length === 0)) && (await as('D', async () => (await q('update items set photo_paths=$2 where id=$1 returning 1', [PI, [ph(1)]])).length === 0)); })());
+t('photos : lecteur voit les photos (pour le carrousel)', await as('C', async () => (await q('select photo_paths from items where id=$1', [PI])).length === 1));
+t('photos : insertion directe avec plusieurs photos', (await as('A', () => q('insert into items (list_id,name,photo_paths) values ($1,$2,$3) returning photo_path', [PL, 'Direct', [ph(5), ph(6)]])))[0].photo_path === ph(5));
+
 // --- suppression en cascade
 await as('A', () => q('delete from lists where id=$1', [L]));
 t('suppression de liste : cadeaux, membres, invitations supprimés', (await q('select 1 from items where list_id=$1', [L])).length + (await q('select 1 from list_members where list_id=$1', [L])).length + (await q('select 1 from invite_links where list_id=$1', [L])).length === 0);
