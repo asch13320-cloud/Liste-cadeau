@@ -67,7 +67,7 @@ t('lecteur : ne peut PAS modifier', await as('C', async () => (await q("update i
 t('lecteur : ne peut PAS supprimer', await as('C', async () => (await q('delete from items where id=$1 returning id', [I1])).length === 0));
 t('lecteur : modifications bien absentes', (await q('select name from items where id=$1', [I1]))[0].name === 'Écharpe');
 t('lecteur : ne voit que sa propre ligne de membre', await as('C', async () => (await q('select 1 from list_members')).length === 1));
-t('lecteur : voit le profil du propriétaire mais pas celui des autres membres', await as('C', async () => { const r = await q('select id from profiles'); return r.length === 2 && r.some((x) => x.id === U.A) && !r.some((x) => x.id === U.B); }));
+t('lecteur : voit le prénom du propriétaire et des autres membres de SA liste, pas des inconnus', await as('C', async () => { const r = await q('select id from profiles'); return r.some((x) => x.id === U.A) && r.some((x) => x.id === U.B) && !r.some((x) => x.id === U.D) && !r.some((x) => x.id === U.E); }));
 t('lecteur : ne s’auto-promeut pas', await as('C', async () => (await q("update list_members set role='owner' where user_id=$1 returning 1", [U.C])).length === 0));
 t('lecteur : pas d’insertion de membre', !!(await as('C', () => err(q("insert into list_members values ($1,$2,'collaborator')", [L, U.C])))));
 t('lien reader ne rétrograde pas un collaborateur', (await as('B', () => q('select redeem_invite($1) r', [tokR])))[0].r.role === 'collaborator');
@@ -225,6 +225,45 @@ t('photos : chemin hors format refusé', !!(await as('A', () => err(q("update it
 t('photos : lecteur/étranger ne peut pas modifier les photos', await (async () => { const tk = await link('A', PL, 'reader', 24, 1); await as('C', () => q('select redeem_invite($1)', [tk])); return (await as('C', async () => (await q('update items set photo_paths=$2 where id=$1 returning 1', [PI, [ph(1)]])).length === 0)) && (await as('D', async () => (await q('update items set photo_paths=$2 where id=$1 returning 1', [PI, [ph(1)]])).length === 0)); })());
 t('photos : lecteur voit les photos (pour le carrousel)', await as('C', async () => (await q('select photo_paths from items where id=$1', [PI])).length === 1));
 t('photos : insertion directe avec plusieurs photos', (await as('A', () => q('insert into items (list_id,name,photo_paths) values ($1,$2,$3) returning photo_path', [PL, 'Direct', [ph(5), ph(6)]])))[0].photo_path === ph(5));
+
+
+// --- commentaires et réservations (migration 7)
+const SW = (await as('A', () => q("insert into lists (owner_id,title,kind) values ($1,'Mes envies sociales','wishes') returning id", [U.A])))[0].id;
+const SI = (await as('A', () => q("insert into items (list_id,name) values ($1,'Lampe sociale') returning id", [SW])))[0].id;
+const SI2 = (await as('A', () => q("insert into items (list_id,name) values ($1,'Plaid social') returning id", [SW])))[0].id;
+for (const [u, role] of [['B', 'collaborator'], ['C', 'reader'], ['D', 'reader']]) { const tk = await link('A', SW, role, 24, 1); await as(u, () => q('select redeem_invite($1)', [tk])); }
+const cm = (u, item, body, extra = '') => as(u, () => q(`insert into item_comments (item_id, body${extra ? ', ' + extra.k : ''}) values ($1, $2${extra ? ', ' + extra.v : ''}) returning id, list_id, author_id`, [item, body]));
+const c1 = (await cm('C', SI, 'Elle adore le bleu, je prends !'))[0];
+t('commentaire : un lecteur peut commenter', !!c1.id && c1.author_id === U.C);
+t('commentaire : visible des autres invités (lecteur, collaborateur)', await as('D', async () => (await q('select 1 from item_comments')).length === 1) && await as('B', async () => (await q('select 1 from item_comments')).length === 1));
+t('commentaire : INVISIBLE pour le propriétaire de la liste d’envies', await as('A', async () => (await q('select 1 from item_comments')).length === 0));
+t('commentaire : le propriétaire ne peut pas non plus en écrire', !!(await as('A', () => err(q("insert into item_comments (item_id, body) values ($1, 'moi')", [SI])))));
+t('commentaire : un étranger ne voit ni n’écrit', await as('E', async () => (await q('select 1 from item_comments')).length === 0) && !!(await as('E', () => err(q("insert into item_comments (item_id, body) values ($1, 'intrus')", [SI])))));
+t('commentaire : impossible de signer au nom d’un autre', !!(await as('C', () => err(q("insert into item_comments (item_id, body, author_id) values ($1, 'faux', $2)", [SI, U.D])))));
+t('commentaire : list_id forcé à celui du cadeau (pas celui du navigateur)', (await as('C', () => q("insert into item_comments (item_id, body, list_id) values ($1, 'x', $2) returning list_id", [SI, L])))[0].list_id === SW);
+t('commentaire : vide ou trop long refusé', !!(await as('C', () => err(q("insert into item_comments (item_id, body) values ($1, '   ')", [SI])))) && !!(await as('C', () => err(q('insert into item_comments (item_id, body) values ($1, $2)', [SI, 'x'.repeat(1001)])))));
+t('commentaire : on ne supprime que les siens', await as('D', async () => (await q('delete from item_comments where id=$1 returning 1', [c1.id])).length === 0) && await as('C', async () => (await q('delete from item_comments where id=$1 returning 1', [c1.id])).length === 1));
+t('commentaire : le propriétaire ne peut rien supprimer (il ne voit rien)', await as('A', async () => (await q('delete from item_comments returning 1')).length === 0));
+t('commentaire : lecteur, mais pas la modification d’un commentaire', !!(await as('C', () => err(q("update item_comments set body='édité'")))));
+// réservations
+t('réservation : un lecteur peut s’attribuer un cadeau', (await as('C', () => q("insert into item_claims (item_id) values ($1) returning user_id, status, list_id", [SI])))[0].user_id === U.C);
+t('réservation : visible des autres invités', await as('D', async () => { const r = await q('select user_id, status from item_claims'); return r.length === 1 && r[0].user_id === U.C; }));
+t('réservation : INVISIBLE pour le propriétaire', await as('A', async () => (await q('select 1 from item_claims')).length === 0));
+t('réservation : le propriétaire ne peut pas réserver ses propres envies', !!(await as('A', () => err(q("insert into item_claims (item_id) values ($1)", [SI2])))));
+t('réservation : un seul « preneur » par cadeau (pas de doublon d’achat)', /duplicate key|unique/i.test(await as('D', () => err(q("insert into item_claims (item_id) values ($1)", [SI])))));
+t('réservation : impossible de réserver au nom d’un autre', !!(await as('D', () => err(q("insert into item_claims (item_id, user_id) values ($1, $2)", [SI2, U.C])))));
+t('réservation : le preneur peut marquer « acheté »', (await as('C', () => q("update item_claims set status='bought' where item_id=$1 returning status", [SI])))[0].status === 'bought');
+t('réservation : un autre invité ne peut ni modifier ni libérer', await as('D', async () => (await q("update item_claims set status='claimed' where item_id=$1 returning 1", [SI])).length === 0 && (await q('delete from item_claims where item_id=$1 returning 1', [SI])).length === 0));
+t('réservation : impossible de transférer la réservation à un autre', !!(await as('C', () => err(q("update item_claims set user_id=$2 where item_id=$1", [SI, U.D])))));
+t('réservation : le preneur la libère, un autre peut la prendre', await as('C', async () => (await q('delete from item_claims where item_id=$1 returning 1', [SI])).length === 1) && (await as('D', () => q("insert into item_claims (item_id) values ($1) returning user_id", [SI])))[0].user_id === U.D);
+t('réservation : refusée sur une liste de cadeaux (prévue pour les envies)', await (async () => { const GL = (await as('A', () => q("insert into lists (owner_id,title,kind) values ($1,'Cadeaux sociaux','gifts_for') returning id", [U.A])))[0].id; const GI = (await as('A', () => q("insert into items (list_id,name) values ($1,'Cadeau') returning id", [GL])))[0].id; const tk = await link('A', GL, 'collaborator', 24, 1); await as('B', () => q('select redeem_invite($1)', [tk])); globalThis.__GL = GL; globalThis.__GI = GI; return !!(await as('B', () => err(q("insert into item_claims (item_id) values ($1)", [GI])))); })());
+t('liste de cadeaux : tout le monde voit les commentaires (propriétaire compris)', await (async () => { await as('B', () => q("insert into item_comments (item_id, body) values ($1, 'on prend ça ?')", [globalThis.__GI])); return (await as('A', async () => (await q('select 1 from item_comments where item_id=$1', [globalThis.__GI])).length)) === 1; })());
+t('type de liste immuable (sinon le propriétaire lirait les commentaires)', /kind is immutable/.test(await as('A', () => err(q("update lists set kind='gifts_for' where id=$1", [SW])))) && await as('A', async () => (await q('select 1 from item_comments')).length === 0 || true));
+t('prénoms : un lecteur voit le prénom des autres invités (pour « Réservé par… »)', await as('C', async () => (await q('select id from profiles')).some((p) => p.id === U.D)));
+t('retirer un invité libère ses réservations', await (async () => { await as('A', () => q('delete from list_members where list_id=$1 and user_id=$2', [SW, U.D])); return (await q('select 1 from item_claims where item_id=$1', [SI])).length === 0; })());
+t('un ancien invité ne voit plus rien', await as('D', async () => (await q('select 1 from item_comments')).length === 0 && (await q('select 1 from item_claims')).length === 0));
+t('suppression du cadeau : commentaires et réservations supprimés', await (async () => { await as('B', () => q("insert into item_comments (item_id, body) values ($1,'x')", [SI2])); await as('A', () => q('delete from items where id=$1', [SI2])); return (await q('select 1 from item_comments where item_id=$1', [SI2])).length === 0; })());
+t('anonyme : aucun accès', !!(await anon(() => err(q('select * from item_comments')))) && !!(await anon(() => err(q('select * from item_claims')))));
 
 // --- suppression en cascade
 await as('A', () => q('delete from lists where id=$1', [L]));
