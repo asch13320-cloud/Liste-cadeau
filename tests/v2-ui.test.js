@@ -8,7 +8,7 @@ const hex64 = (c) => c.repeat(64);
 let uid = 0; const nid = () => '00000000-0000-4000-8000-' + String(++uid).padStart(12, '0');
 
 function fakeSb(opts = {}) {
-  const db = { lists: [], list_members: [], items: [], profiles: [], item_private_notes: [], inbox_items: [], invite_links: [] };
+  const db = { lists: [], list_members: [], items: [], profiles: [], item_private_notes: [], inbox_items: [], invite_links: [], item_comments: [], item_claims: [] };
   const st = { session: opts.session || null, listeners: [], calls: [], uploads: [], removed: [], offline: false, rpc: {}, signed: [] };
   const me = () => st.session && st.session.user;
   function from(table) {
@@ -24,26 +24,30 @@ function fakeSb(opts = {}) {
       st.calls.push(table + ':' + q.op);
       if (st.offline) return { data: null, error: { message: 'Failed to fetch' } };
       if (st.noPhotosCol && table === 'items' && (q.op === 'insert' || q.op === 'update') && q.p && 'photo_paths' in [].concat(q.p)[0]) return { data: null, error: { message: "Could not find the 'photo_paths' column of 'items' in the schema cache" } };
+      if ((table === 'item_comments' || table === 'item_claims') && st.noSocial) return { data: null, error: { message: 'relation "public.' + table + '" does not exist' } };
       const rows = db[table]; let out = [];
+      if (table === 'item_claims' && q.op === 'insert' && rows.some((r) => r.item_id === q.p.item_id)) return { data: null, error: { message: 'duplicate key value violates unique constraint "item_claims_pkey"', code: '23505' } };
       if (q.op === 'insert') {
         out = [].concat(q.p).map((r) => {
           const base = { id: nid(), created_at: new Date().toISOString() };
           if (table === 'items') Object.assign(base, { version: 1, favorite: false, bought: false, wrapped: false, created_by: me() && me().id, photo_path: null, link_title: null });
           if (table === 'lists') Object.assign(base, { emoji: '🎀', budget: null });
           const row = { ...base, ...r };
+          if (table === 'item_comments' || table === 'item_claims') { const it = db.items.find((i) => i.id === r.item_id); row.list_id = it ? it.list_id : null; row.author_id = row.author_id || (me() && me().id); if (table === 'item_claims') { row.user_id = me() && me().id; row.status = 'claimed'; } }
           if (table === 'items') { row.photo_paths = row.photo_paths || []; if (row.photo_paths.length) row.photo_path = row.photo_paths[0]; }
           return row;
         });
         out.forEach((r) => { rows.push(r); if (table === 'lists') db.list_members.push({ list_id: r.id, user_id: r.owner_id, role: 'owner' }); });
       } else if (q.op === 'update') {
-        out = rows.filter((r) => q.f.every((f) => f(r))); out.forEach((r) => { Object.assign(r, q.p); if (table === 'items') { r.version++; if ('photo_paths' in q.p) r.photo_path = (q.p.photo_paths || [])[0] || null; else if ('photo_path' in q.p) r.photo_paths = q.p.photo_path ? [q.p.photo_path] : []; } });
+        out = rows.filter((r) => q.f.every((f) => f(r)) && !((table === 'item_claims') && r.user_id !== (me() && me().id))); out.forEach((r) => { Object.assign(r, q.p); if (table === 'items') { r.version++; if ('photo_paths' in q.p) r.photo_path = (q.p.photo_paths || [])[0] || null; else if ('photo_path' in q.p) r.photo_paths = q.p.photo_path ? [q.p.photo_path] : []; } });
       } else if (q.op === 'delete') {
-        out = rows.filter((r) => q.f.every((f) => f(r))); out.forEach((r) => rows.splice(rows.indexOf(r), 1));
+        out = rows.filter((r) => q.f.every((f) => f(r)) && !((table === 'item_claims' || table === 'item_comments') && (r.user_id || r.author_id) !== (me() && me().id))); out.forEach((r) => rows.splice(rows.indexOf(r), 1));
       } else if (q.op === 'upsert') {
         const keys = (q.conflict || 'id').split(','); const r = q.p; const ex = rows.find((x) => keys.every((k) => x[k] === r[k]));
         if (ex) Object.assign(ex, r); else rows.push({ ...r }); out = [r];
       } else {
         out = rows.filter((r) => q.f.every((f) => f(r)));
+        if (table === 'item_comments' || table === 'item_claims') out = out.filter((r) => { const l = db.lists.find((x) => x.id === r.list_id); return !(l && l.kind === 'wishes' && me() && l.owner_id === me().id); }); // la base cache ça au propriétaire
         if (q.ord) out.sort((a, c) => (a[q.ord[0]] > c[q.ord[0]] ? 1 : -1) * q.ord[1]);
         if (q.lim) out = out.slice(0, q.lim);
       }
@@ -72,7 +76,7 @@ function fakeSb(opts = {}) {
     from,
     rpc: async (n, a) => { st.calls.push('rpc:' + n); if (st.offline) return { data: null, error: { message: 'Failed to fetch' } }; return st.rpc[n] ? st.rpc[n](a) : { data: null, error: { message: 'rpc inconnu ' + n } }; },
     storage: { from: () => ({
-      upload: async (p, blob) => { st.uploads.push(p); return { data: { path: p }, error: null }; }, remove: async (ps) => { st.removed.push(...ps); return { data: [], error: null }; },
+      upload: async (p, blob) => { if (st.uploadFail) return { data: null, error: { message: 'Upload failed (test)' } }; st.uploads.push(p); return { data: { path: p }, error: null }; }, remove: async (ps) => { st.removed.push(...ps); return { data: [], error: null }; },
       createSignedUrls: async (ps) => { st.signed.push(...ps); return { data: ps.map((p) => ({ path: p, signedUrl: 'https://signed.example/' + p })), error: null }; },
       copy: async () => ({ data: {}, error: null }) }) },
     functions: { invoke: async (n, o) => (st.og ? st.og(o.body) : { data: null, error: { message: 'absent' } }) },
@@ -444,6 +448,72 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, `[data-a="imove"][data-id="${mv.id}"]`); await click(w, '#dlg [data-i="0"]'); await sleep(250);
   const moved = w.__F.db.items.find((i) => i.name === 'Plaid' && i.list_id === w.__F.ids.W);
   t('déplacement : les 2 photos suivent le cadeau', moved && moved.photo_paths.length === 2 && moved.photo_paths.every((p) => p.startsWith(w.__F.ids.W + '/')) && !w.__F.db.items.some((i) => i.id === mv.id) && L2.every((p) => w.__F.st.removed.includes(p)));
+
+
+  // 15. commentaires et réservations : visibles des invités, jamais du propriétaire d'une liste d'envies
+  const THIRD = '33333333-3333-4333-8333-333333333333';
+  const socialSetup = (F) => {
+    F.st.session = { user: ME }; F.db.profiles.push({ id: ME.id, display_name: 'Marie' }, { id: OTHER, display_name: 'Paul' }, { id: THIRD, display_name: 'Léa' });
+    const PW = nid(), MW = nid(), MG = nid(); F.ids = { PW, MW, MG };
+    F.db.lists.push({ id: PW, owner_id: OTHER, kind: 'wishes', title: 'Envies de Paul', emoji: '🎮', occasion: 'birthday', created_at: '1' }, { id: MW, owner_id: ME.id, kind: 'wishes', title: 'Mes envies', emoji: '🎀', occasion: 'christmas', created_at: '2' }, { id: MG, owner_id: ME.id, kind: 'gifts_for', title: 'Cadeaux de Maman', emoji: '🎁', occasion: 'christmas', created_at: '3' });
+    F.db.list_members.push({ list_id: PW, user_id: OTHER, role: 'owner' }, { list_id: PW, user_id: ME.id, role: 'reader' }, { list_id: PW, user_id: THIRD, role: 'reader' }, { list_id: MW, user_id: ME.id, role: 'owner' }, { list_id: MW, user_id: THIRD, role: 'reader' }, { list_id: MG, user_id: ME.id, role: 'owner' }, { list_id: MG, user_id: THIRD, role: 'collaborator' });
+    const mk = (l, n, extra) => ({ id: nid(), list_id: l, name: n, version: 1, created_at: '5', photo_paths: [], ...extra });
+    F.db.items.push(mk(PW, 'Manette'), mk(PW, 'Casque'), mk(MW, 'Ma lampe'), mk(MG, 'Écharpe maman'));
+    F.db.item_claims.push({ item_id: F.db.items[1].id, list_id: PW, user_id: THIRD, status: 'claimed' });
+    F.db.item_comments.push({ id: nid(), item_id: F.db.items[0].id, list_id: PW, author_id: THIRD, body: 'Je pense lui offrir les manettes', created_at: '2026-11-10T10:00:00Z' }, { id: nid(), item_id: F.db.items[2].id, list_id: MW, author_id: THIRD, body: 'SECRET : je lui prends la lampe', created_at: '2026-11-10T11:00:00Z' });
+    F.db.item_claims.push({ item_id: F.db.items[2].id, list_id: MW, user_id: THIRD, status: 'claimed' });
+  };
+  w = await boot({ setup: socialSetup });
+  await click(w, '[data-id="shared"]'); await click(w, $$(w, '.person').find((e) => /Envies de Paul/.test(e.textContent)));
+  const manette = w.__F.db.items.find((i) => i.name === 'Manette'), casque = w.__F.db.items.find((i) => i.name === 'Casque');
+  const card = (n) => $$(w, 'article.card').find((c) => c.textContent.includes(n));
+  t('invité : boutons « Je m’en occupe » et commentaires sur chaque envie', !!card('Manette').querySelector('[data-a="iclaim"]') && !!card('Manette').querySelector('[data-a="icomments"]') && !card('Manette').querySelector('[data-a="iedit"]') && !card('Manette').querySelector('[data-a="idel"]'));
+  t('invité : cadeau déjà réservé par quelqu’un → « Réservé par Léa », pas de bouton', /Réservé par Léa/.test(card('Casque').textContent) && !card('Casque').querySelector('[data-a="iclaim"]'));
+  t('invité : nombre de commentaires affiché', /💬 1/.test(card('Manette').textContent));
+  await click(w, card('Manette').querySelector('[data-a="iclaim"]')); await sleep(150);
+  const mine = w.__F.db.item_claims.find((c) => c.item_id === manette.id);
+  t('réservation : je m’attribue le cadeau', mine && mine.user_id === ME.id && mine.status === 'claimed' && !!card('Manette').querySelector('[data-a="irelease"]') && !card('Manette').querySelector('[data-a="iclaim"]'));
+  await click(w, card('Manette').querySelector('[data-a="ibought"]')); await sleep(120);
+  t('réservation : je marque « acheté »', w.__F.db.item_claims.find((c) => c.item_id === manette.id).status === 'bought' && /Acheté ✓/.test(card('Manette').textContent));
+  await click(w, card('Manette').querySelector('[data-a="irelease"]')); await sleep(120);
+  t('réservation : j’annule, le cadeau est de nouveau libre', !w.__F.db.item_claims.some((c) => c.item_id === manette.id) && !!card('Manette').querySelector('[data-a="iclaim"]'));
+  w.__F.db.item_claims.push({ item_id: manette.id, list_id: w.__F.ids.PW, user_id: THIRD, status: 'claimed' });   // quelqu'un réserve juste avant moi
+  await click(w, card('Manette').querySelector('[data-a="iclaim"]')); await sleep(200);
+  t('2 personnes en même temps : la 2e est prévenue et voit « Réservé par Léa »', /vient de réserver/.test(($(w, '#toast') || {}).textContent || '') && /Réservé par Léa/.test(card('Manette').textContent) && w.__F.db.item_claims.filter((c) => c.item_id === manette.id).length === 1);
+  await click(w, card('Manette').querySelector('[data-a="icomments"]'));
+  t('commentaires : fenêtre ouverte, précise que le propriétaire ne voit rien', /pas par le propriétaire/.test($(w, '#dlg').textContent) && /Je pense lui offrir/.test($(w, '#cmlist').textContent) && /Léa/.test($(w, '#cmlist').textContent));
+  const cf = $(w, '#cmform'); cf.elements.body.value = 'Je prends la manette, toi le casque ?'; await submit(w, cf); await sleep(150);
+  const mine2 = w.__F.db.item_comments.find((c) => c.body.startsWith('Je prends la manette'));
+  t('commentaires : mon message est enregistré et affiché', mine2 && mine2.author_id === ME.id && /Je prends la manette/.test($(w, '#cmlist').textContent));
+  await click(w, '#cmlist [data-delc]'); await sleep(150);
+  t('commentaires : je supprime le mien (pas celui des autres)', !w.__F.db.item_comments.some((c) => c.id === mine2.id) && w.__F.db.item_comments.some((c) => c.author_id === THIRD));
+  await click(w, '[data-close]');
+
+  // le propriétaire de la liste d'envies ne voit RIEN (ni bouton, ni commentaire, ni réservation)
+  await click(w, '[data-id="mine"]'); await click(w, $$(w, '.person').find((e) => /Mes envies/.test(e.textContent)));
+  t('propriétaire des envies : aucun bouton social', !$(w, '[data-a="iclaim"]') && !$(w, '[data-a="icomments"]') && !$(w, '[data-a="irelease"]'));
+  t('propriétaire des envies : aucune trace des commentaires ni des réservations', !/SECRET/.test(txt(w)) && !/Réservé par/.test(txt(w)) && !/💬/.test($(w, '#app').textContent));
+  t('propriétaire des envies : informé que les invités peuvent commenter, sans rien voir', /ne verras rien/.test(txt(w)));
+  // liste de cadeaux partagée : commentaires visibles de tous (propriétaire compris), pas de réservation
+  await click(w, '[data-id="shared"]'); await click(w, $$(w, '.person').find((e) => /Maman/.test(e.textContent)));
+  t('liste de cadeaux à plusieurs : bouton commentaires, pas de réservation', !!$(w, '[data-a="icomments"]') && !$(w, '[data-a="iclaim"]'));
+  // base sans la migration 7 : l'app continue de marcher, sans boutons sociaux
+  const wn = await boot({ setup: (F) => { socialSetup(F); F.st.noSocial = true; } });
+  await click(wn, '[data-id="shared"]'); await click(wn, $$(wn, '.person').find((e) => /Envies de Paul/.test(e.textContent)));
+  t('migration 7 absente : l’app marche, sans boutons de commentaires', /Manette/.test(txt(wn)) && !$(wn, '[data-a="icomments"]') && !$(wn, '[data-a="iclaim"]'));
+
+  // 16. bug « l'envie se multiplie » : si la photo échoue, un 2e appui ne crée PAS un doublon
+  w = await boot({ setup: (F) => { F.st.session = { user: ME }; F.db.profiles.push({ id: ME.id, display_name: 'Marie' }); const W = nid(); F.ids = { W }; F.db.lists.push({ id: W, owner_id: ME.id, kind: 'wishes', title: 'Mes envies', emoji: '🎀', occasion: 'christmas', created_at: '1' }); F.db.list_members.push({ list_id: W, user_id: ME.id, role: 'owner' }); F.st.og = (b) => (b.image ? { data: { error: 'x' }, error: null } : { data: { title: 'Sac', image: 'https://shop.fr/s.png' }, error: null }); } });
+  w.V2API.resizeImage = async (b) => b;
+  await click(w, '[data-id="mine"]'); await click(w, '.person'); await click(w, '[data-a="iadd"]');
+  const fd1 = $(w, '#f'); fd1.elements.link.value = 'https://shop.fr/sac'; fd1.elements.link.dispatchEvent(new w.Event('change')); await sleep(150); setv(fd1, 'name', 'Sac à dos'); withFiles(w, $(w, '#f input[type=file]'), [mkFile(w, 1)]);
+  w.__F.st.uploadFail = true; await submit(w, fd1); await sleep(200);
+  t('photo en échec : l’envie est créée UNE fois, message clair dans la fenêtre', w.__F.db.items.filter((i) => i.name === 'Sac à dos').length === 1 && $(w, '#dlg').open && /une seule fois/.test($(w, '#ferr').textContent));
+  await submit(w, $(w, '#f')); await sleep(200);
+  t('2e appui : toujours une seule envie (pas de doublon), photo toujours absente', w.__F.db.items.filter((i) => i.name === 'Sac à dos').length === 1 && !w.__F.db.items.find((i) => i.name === 'Sac à dos').photo_path);
+  w.__F.st.uploadFail = false; await submit(w, $(w, '#f')); await sleep(250);
+  const sac = w.__F.db.items.filter((i) => i.name === 'Sac à dos');
+  t('3e appui, photo qui passe : toujours UNE seule envie, avec sa photo, fenêtre fermée', sac.length === 1 && sac[0].photo_paths.length === 1 && !$(w, '#dlg').open && $$(w, 'article.card').filter((c) => /Sac à dos/.test(c.textContent)).length === 1);
 
   // 10. déconnexion
   await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);

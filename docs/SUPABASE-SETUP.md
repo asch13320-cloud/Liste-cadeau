@@ -7,7 +7,12 @@ Supabase → **SQL Editor** → **New query**. Colle puis exécute (**Run**), da
 
 3. `supabase/migrations/20261107000003_profiles_owner_visible.sql` (petit correctif : un lecteur voit le prénom du propriétaire)
 
-Chaque fichier doit se terminer par « Success ». Ne les exécute qu'une fois chacun. (`supabase/setup-complet.sql` regroupe les fichiers 1 et 2 pour une installation neuve.)
+Chaque fichier doit se terminer par « Success ». Ne les exécute qu'une fois chacun. 4. `20261107000004_import_legacy_v2.sql` (import plus tolérant)
+5. `20261108000005_occasions.sql` (occasions : Noël, anniversaire, baby shower…)
+6. `20261109000006_multi_photos.sql` (plusieurs photos par cadeau)
+7. `20261110000007_social.sql` (commentaires et réservations, invisibles pour le propriétaire d'une liste d'envies)
+
+(`supabase/setup-complet.sql` regroupe les fichiers 1 et 2 pour une installation neuve.)
 
 ## 2. Authentification
 Supabase → **Authentication → URL Configuration** :

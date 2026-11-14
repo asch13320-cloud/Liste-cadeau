@@ -129,17 +129,23 @@
 
     // ---------- Chargement complet (petites données : on recharge tout, c'est simple et fiable)
     api.loadAll = async (user) => {
-      const [lists, members, items, profiles, notes, inbox] = await Promise.all([
-        sb.from('lists').select('*').order('created_at', { ascending: true }),
-        sb.from('list_members').select('list_id,user_id,role'),
-        sb.from('items').select('*').order('created_at', { ascending: false }).limit(5000),
-        sb.from('profiles').select('id,display_name'),
-        sb.from('item_private_notes').select('item_id,notes'),
-        sb.from('inbox_items').select('id,text,created_at').order('created_at', { ascending: false })
-      ].map((p) => p.then(must)));
+      const soft = (p) => p.then((r) => { if (r.error) { api.noSocial = true; return []; } return r.data || []; });   // migration 7 pas encore lancée : on continue sans
+      api.noSocial = false;
+      const [[lists, members, items, profiles, notes, inbox], comments, claims] = await Promise.all([
+        Promise.all([
+          sb.from('lists').select('*').order('created_at', { ascending: true }),
+          sb.from('list_members').select('list_id,user_id,role'),
+          sb.from('items').select('*').order('created_at', { ascending: false }).limit(5000),
+          sb.from('profiles').select('id,display_name'),
+          sb.from('item_private_notes').select('item_id,notes'),
+          sb.from('inbox_items').select('id,text,created_at').order('created_at', { ascending: false })
+        ].map((p) => p.then(must))),
+        soft(sb.from('item_comments').select('id,item_id,author_id,body,created_at').order('created_at', { ascending: true })),
+        soft(sb.from('item_claims').select('item_id,user_id,status'))
+      ]);
       const names = {}; profiles.forEach((p) => { names[p.id] = p.display_name || ''; });
       const mem = {}; members.forEach((m) => { (mem[m.list_id] = mem[m.list_id] || []).push(m); });
-      const D = { me: { id: user.id, email: user.email, name: names[user.id] || '' }, names, lists: [], members: mem, items: {}, notes: {}, inbox };
+      const D = { me: { id: user.id, email: user.email, name: names[user.id] || '' }, names, lists: [], members: mem, items: {}, notes: {}, inbox, comments: {}, claims: {} };
       lists.forEach((l) => {
         const mine = (mem[l.id] || []).find((m) => m.user_id === user.id);
         D.lists.push({ ...l, role: mine ? mine.role : (l.owner_id === user.id ? 'owner' : 'reader') });
@@ -147,8 +153,20 @@
       });
       items.forEach((i) => { (D.items[i.list_id] = D.items[i.list_id] || []).push(i); });
       notes.forEach((n) => { D.notes[n.item_id] = n.notes; });
+      comments.forEach((c) => { (D.comments[c.item_id] = D.comments[c.item_id] || []).push(c); });
+      claims.forEach((c) => { D.claims[c.item_id] = c; });
       return D;
     };
+
+    // ---------- Commentaires et réservations (invisibles pour le propriétaire d'une liste d'envies : c'est la base qui l'impose)
+    api.addComment = async (itemId, body) => { const t = txt(body, 1000); if (!t) throw uerr('Écris un message.'); const r = await sb.from('item_comments').insert({ item_id: itemId, body: t }); if (r.error) throw r.error; };
+    api.deleteComment = async (id) => { const r = await sb.from('item_comments').delete().eq('id', id).select(); if (!must(r).length) throw new Error('forbidden'); };
+    api.claim = async (itemId) => {
+      const r = await sb.from('item_claims').insert({ item_id: itemId });
+      if (r.error) { if (r.error.code === '23505' || /duplicate key|unique/i.test(r.error.message || '')) throw uerr('Quelqu’un vient de réserver ce cadeau.'); throw r.error; }
+    };
+    api.setClaimStatus = async (itemId, status) => { const r = await sb.from('item_claims').update({ status: status === 'bought' ? 'bought' : 'claimed' }).eq('item_id', itemId).select(); if (!must(r).length) throw new Error('forbidden'); };
+    api.release = async (itemId) => { const r = await sb.from('item_claims').delete().eq('item_id', itemId).select(); if (r.error) throw r.error; };
 
     // ---------- Profil
     api.setName = async (uid, name) => { const r = await sb.from('profiles').update({ display_name: txt(name, 60) || '' }).eq('id', uid); if (r.error) throw r.error; };
@@ -269,7 +287,7 @@
     // ---------- Temps réel (les droits sont appliqués par la base ; on recharge à chaque évènement)
     api.subscribe = (uid, onChange, onStatus) => {
       const ch = sb.channel('v2-' + uid);
-      ['items', 'lists', 'list_members'].forEach((t) => ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => onChange(t)));
+      ['items', 'lists', 'list_members'].concat(api.noSocial ? [] : ['item_comments', 'item_claims']).forEach((t) => ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => onChange(t)));
       ch.subscribe((s) => onStatus && onStatus(s));
       return () => { try { sb.removeChannel(ch); } catch (e) { /* ignore */ } };
     };

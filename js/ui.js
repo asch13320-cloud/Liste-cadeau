@@ -139,7 +139,7 @@
     if (refreshing) return refreshing;
     if (!force && typing()) { S.dirty = true; return; }
     refreshing = (async () => {
-      try { await load(); if (S.lid && !list(S.lid)) { S.lid = null; if (S.tab === 'detail') S.tab = 'mine'; } render(); }
+      try { await load(); if (S.lid && !list(S.lid)) { S.lid = null; if (S.tab === 'detail') S.tab = 'mine'; } render(); refreshComments(); }
       catch (e) { fail(e); S.offline = api.isNetworkError(e); syncChip(); }
       finally { refreshing = null; }
     })();
@@ -229,6 +229,19 @@
       : `<div class="ph" style="height:80px;display:grid;place-items:center;font-size:40px">${it.bought ? '🎁' : '✂️'}</div>`;
   }
 
+  // Le propriétaire d'une liste d'envies ne voit AUCUN de ces éléments (et la base ne les lui renvoie pas).
+  const socialOn = (l) => !!api && !api.noSocial && !(l.kind === 'wishes' && l.role === 'owner') && (l.kind === 'wishes' || memberCount(l) > 1 || l.role !== 'owner');
+  function socialButtons(l, it, w) {
+    if (!socialOn(l)) return [];
+    const out = [], c = D.claims[it.id], n = (D.comments[it.id] || []).length;
+    if (w) {
+      if (!c) out.push(btn('iclaim', it.id, '🎁 Je m’en occupe', 'on'));
+      else if (c.user_id === D.me.id) out.push(btn('ibought', it.id, c.status === 'bought' ? '🛍 Acheté ✓' : '🛍 Je l’ai acheté', c.status === 'bought' ? 'on' : ''), btn('irelease', it.id, 'Annuler'));
+      else out.push(`<span class="badge red" title="Pour éviter les doublons">🔒 ${c.status === 'bought' ? 'Acheté' : 'Réservé'} par ${esc(nameOf(c.user_id))}</span>`);
+    }
+    out.push(btn('icomments', it.id, '💬' + (n ? ' ' + n : '')));
+    return out;
+  }
   function itemCard(l, it) {
     const ed = canEdit(l), w = l.kind === 'wishes', note = D.notes[it.id];
     const tags = [];
@@ -237,6 +250,7 @@
     if (has(it.est_price)) tags.push(`<span class="tag">${eur(it.est_price)}</span>`);
     const acts = [];
     if (ed && w) acts.push(btn('inext', it.id, (SI[it.status] || '⭐') + ' · changer', 'on'));
+    acts.push(...socialButtons(l, it, w));
     if (ed && !w) acts.push(btn('ibuy', it.id, it.bought ? '✓ Trouvé !' : '🛍️ Trouvé ?', it.bought ? 'on' : ''), btn('iwrap', it.id, it.wrapped ? '🎀 Emballé !' : '🎀 Emballer', it.wrapped ? 'on' : ''));
     if (ed) acts.push(btn('iedit', it.id, '✎'), btn('imove', it.id, w ? '🎁 Pour qui ?' : '→ Autre liste'));
     if (safe(it.link)) acts.push(`<a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer">Voir le produit ↗</a>`);
@@ -317,7 +331,8 @@
     const back = l.role === 'reader' || isCollab(l) ? 'shared' : 'mine';
     return `<button class="ghost" data-a="tab" data-id="${back}">← Retour</button>
     <div class="section-head"><div><div class="small-label">${w ? 'Liste d’envies' : 'Le carnet de'}</div><h2>${esc(l.emoji)} ${esc(l.title)}</h2></div><span class="paper-note">${ROLE[l.role]}</span></div>
-    ${l.role === 'reader' ? '<p class="banner">👀 Lecture seule : tu vois cette liste en direct, mais tu ne peux pas la modifier.</p>' : ''}
+    ${l.role === 'reader' ? '<p class="banner">👀 Lecture seule : tu vois cette liste en direct, mais tu ne peux pas la modifier. Tu peux réserver un cadeau (🎁) et écrire des commentaires (💬) : la personne ne les voit pas.</p>' : ''}
+    ${l.kind === 'wishes' && l.role === 'owner' && memberCount(l) > 1 ? '<p class="note">🤫 Les personnes avec qui tu partages peuvent commenter et se répartir les cadeaux : tu ne verras rien, pour garder la surprise.</p>' : ''}
     ${!w ? `<div class="card"><div class="top"><div><div class="small-label">Le budget</div><h4>${all.length} ${plural(all.length, 'idée', 'idées')} à préparer</h4></div><b style="font:700 22px var(--display)">${eur(sp)}</b></div>${has(l.budget) ? `<p class="note">Dépensé sur ${eur(l.budget)} prévus</p>` : ''}<div class="bar"><i style="width:${pc}%"></i></div></div>` : ''}
     <div class="acts" style="margin:12px 0">${ed ? btn('iadd', l.id, '＋ Ajouter', 'on') : ''}${ed && all.some((i) => i.link && !photoList(i).length) ? btn('lfill', l.id, '🖼 Photos des liens (' + all.filter((i) => i.link && !photoList(i).length).length + ')') : ''}${l.role === 'owner' ? btn('lshare', l.id, '👥 Partager') + btn('ledit', l.id, '✎ Modifier') + btn('ldel', l.id, 'Supprimer') : l.role === 'collaborator' ? btn('lmembers', l.id, '👥 Membres') + btn('lleave', l.id, 'Quitter') : btn('lleave', l.id, 'Quitter la liste')}</div>
     <div class="chips">${filters.map(([k, t]) => `<button class="chip ${F === k ? 'on' : ''}" data-a="filter" data-id="${k}">${t}</button>`).join('')}</div>
@@ -441,6 +456,7 @@
     const w = l.kind === 'wishes', edit = !!it;
     let lp = it && (it.link_title || it.link_image) ? { title: it.link_title, image: it.link_image, description: it.link_description, price: it.link_price, url: it.link } : null;
     let keep = it ? photoList(it).slice() : [];
+    let savedItem = null;   // fiche déjà créée par cet envoi : un 2e appui sur « Enregistrer » la met à jour au lieu d'en créer une autre
     return form({
       title: edit ? 'Modifier ' + (w ? 'l’envie' : 'le cadeau') : w ? 'Nouvelle envie 🎀' : 'Nouveau cadeau pour ' + esc(l.title),
       fields: [
@@ -466,8 +482,10 @@
         if (keep.length + files.length > 10) throw new Error('10 photos maximum par cadeau (tu en as ' + (keep.length + files.length) + ').');
         const useSite = !!($('#usesite') && $('#usesite').checked);
         let saved;
-        if (edit) saved = await api.updateItem(it, patch);
+        if (savedItem) saved = await api.updateItem(savedItem, patch);
+        else if (edit) saved = await api.updateItem(it, patch);
         else saved = await api.createItem(l.id, patch, newId());
+        savedItem = saved;
         const orig = photoList(saved), added = [];
         let photosDone = false;
         try {
@@ -479,12 +497,12 @@
           }
           const final = keep.concat(added);
           if (final.length !== orig.length || final.some((p, n) => p !== orig[n])) {
-            saved = await api.updateItem(saved, { photo_paths: final });
+            saved = await api.updateItem(saved, { photo_paths: final }); savedItem = saved;
             await api.removePhotos(orig.filter((p) => !final.includes(p))).catch(() => {});
           }
           photosDone = true;
           if (api.needsMigration6 && final.length > 1) toast('Une seule photo gardée : la base doit être mise à jour pour en avoir plusieurs (migration 6).');
-        } catch (e) { await api.removePhotos(added.filter((p) => !photoList(saved).includes(p))).catch(() => {}); await refresh(true); throw new Error('Le cadeau est enregistré, mais : ' + api.friendly(e)); }
+        } catch (e) { console.warn(e); await api.removePhotos(added.filter((p) => !photoList(saved).includes(p))).catch(() => {}); await refresh(true); throw new Error('Le cadeau est enregistré (une seule fois), mais la photo n’a pas pu être ajoutée : ' + api.friendly(e) + ' — appuie sur « Enregistrer » pour réessayer, ou ferme la fenêtre.'); }
         try { await api.setPrivateNote(saved.id, o.private); } catch (e) { await refresh(true); throw new Error('Le cadeau est enregistré, mais ta note perso ne l’est pas : ' + api.friendly(e)); }
         await refresh(true);
       },
@@ -664,7 +682,7 @@
   }
 
   // ------------------------------------------------------------------ actions
-  const WRITE = new Set(['inext', 'ibuy', 'iwrap', 'ifav', 'idel', 'imove', 'ldel', 'lleave', 'vdel', 'vwish', 'vgive']);
+  const WRITE = new Set(['iclaim', 'irelease', 'ibought', 'inext', 'ibuy', 'iwrap', 'ifav', 'idel', 'imove', 'ldel', 'lleave', 'vdel', 'vwish', 'vgive']);
   async function patchItem(id, patch) {
     const it = findItem(id); if (!it) return;
     try { await api.updateItem(it, patch); await refresh(true); } catch (e) { fail(e); if (e.conflict) await refresh(true); }
@@ -677,6 +695,32 @@
     if (!ls.length) { toast('Crée d’abord une liste pour pouvoir y ranger ça.'); return null; }
     return choose(title, ls.map((l) => ({ v: l.id, l: l.emoji + ' ' + l.title })), sub);
   }
+  // ------------------------------------------------------------------ commentaires
+  function commentsHtml(it, l) {
+    const cs = D.comments[it.id] || [];
+    return (cs.length ? cs.map((c) => `<div class="member" style="align-items:flex-start"><span><b>${esc(nameOf(c.author_id))}</b> <span class="small-label">${esc(ISO(c.created_at))}</span><br>${esc(c.body).replace(/\n/g, '<br>')}</span>${c.author_id === D.me.id ? `<button data-delc="${esc(c.id)}" aria-label="Supprimer mon commentaire">🗑</button>` : ''}</div>`).join('') : '<p class="note">Aucun commentaire pour l’instant.</p>');
+  }
+  function openComments(itemId) {
+    const it = findItem(itemId); if (!it) return; const l = itemList(it); S.cm = itemId;
+    modal(`<h3>💬 ${esc(it.name)}</h3>
+      ${l.kind === 'wishes' ? '<p class="sub">🤫 Ces commentaires sont visibles par les autres invités, <b>pas par le propriétaire de la liste</b>.</p>' : '<p class="sub">Visibles par tous les membres de la liste.</p>'}
+      <div id="cmlist">${commentsHtml(it, l)}</div>
+      <form id="cmform" novalidate style="margin-top:10px"><label>Ton message<textarea name="body" rows="3" maxlength="1000" placeholder="Ex. : je prends le modèle bleu, on se partage le prix ?"></textarea></label><p class="err" id="cmerr" role="alert"></p>
+      <div class="row"><button type="button" class="ghost" data-close>Fermer</button><button class="pri">Envoyer</button></div></form>`);
+    const d = $('#dlg'), box = $('#cmlist', d), bind = () => d.querySelectorAll('[data-delc]').forEach((b) => { b.onclick = async () => { if (!mayWrite()) return; try { await api.deleteComment(b.dataset.delc); await refresh(true); } catch (e) { $('#cmerr').textContent = api.friendly(e); } }; });
+    bind(); box.scrollTop = box.scrollHeight;
+    $('#cmform', d).onsubmit = async (e) => {
+      e.preventDefault(); if (!mayWrite()) return; const f = e.target, er = $('#cmerr'), bt = f.querySelector('button.pri'); er.textContent = ''; bt.disabled = true;
+      try { await api.addComment(itemId, f.elements.body.value); f.elements.body.value = ''; await refresh(true); }
+      catch (x) { er.textContent = api.friendly(x); } finally { bt.disabled = false; }
+    };
+    S.cmBind = bind;
+  }
+  function refreshComments() {
+    if (!S.cm || !$('#dlg').open || !$('#cmlist')) { S.cm = null; return; }
+    const it = findItem(S.cm); if (!it) return; $('#cmlist').innerHTML = commentsHtml(it, itemList(it)); if (S.cmBind) S.cmBind();
+  }
+
   async function fillPhotos(lid) {
     const l = list(lid), todo = itemsOf(lid).filter((i) => i.link && !photoList(i).length);
     if (!todo.length) return toast('Tous les cadeaux avec un lien ont déjà leur photo.');
@@ -740,6 +784,10 @@
       try { await api.removeMember(id, D.me.id); S.tab = 'shared'; S.lid = null; await refresh(true); } catch (e) { fail(e); }
     },
     lfill: (id) => fillPhotos(id),
+    icomments: (id) => openComments(id),
+    iclaim: async (id) => { try { await api.claim(id); } catch (e) { fail(e); } await refresh(true); },
+    irelease: async (id) => { try { await api.release(id); await refresh(true); } catch (e) { fail(e); } },
+    ibought: async (id) => { const c = D.claims[id]; try { await api.setClaimStatus(id, c && c.status === 'bought' ? 'claimed' : 'bought'); await refresh(true); } catch (e) { fail(e); } },
     iadd: (id) => itemForm(list(id)), iedit: (id) => { const it = findItem(id); itemForm(itemList(it), it); },
     inext: (id) => { const it = findItem(id); const o = ['idea', 'wish', 'received']; return patchItem(id, { status: o[(o.indexOf(it.status) + 1) % 3] }); },
     ifav: (id) => patchItem(id, { favorite: !findItem(id).favorite }),
