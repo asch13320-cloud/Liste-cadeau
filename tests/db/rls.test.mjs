@@ -265,6 +265,16 @@ t('un ancien invité ne voit plus rien', await as('D', async () => (await q('sel
 t('suppression du cadeau : commentaires et réservations supprimés', await (async () => { await as('B', () => q("insert into item_comments (item_id, body) values ($1,'x')", [SI2])); await as('A', () => q('delete from items where id=$1', [SI2])); return (await q('select 1 from item_comments where item_id=$1', [SI2])).length === 0; })());
 t('anonyme : aucun accès', !!(await anon(() => err(q('select * from item_comments')))) && !!(await anon(() => err(q('select * from item_claims')))));
 
+
+// --- liens d'invitation courts (migration 8)
+const shortTok = await link('A', W, 'reader', 24, 3);
+t('lien court : 22 caractères, sans caractère gênant (lettres, chiffres, - et _)', /^[A-Za-z0-9_-]{22}$/.test(shortTok));
+t('lien court : tous différents', new Set(await Promise.all(Array.from({ length: 12 }, () => link('A', W, 'reader', 24, 1)))).size === 12);
+t('lien court : fonctionne pour rejoindre (sensible à la casse)', (await as('E', () => q('select redeem_invite($1) r', [shortTok])))[0].r.role === 'reader');
+t('lien court : une casse modifiée ne marche pas (jeton différent)', /invalid_or_expired_invite/.test(await as('F', () => err(q('select redeem_invite($1)', [shortTok.toLowerCase() === shortTok ? shortTok.toUpperCase() : shortTok.toLowerCase()])))));
+t('ancien lien (64 caractères hexadécimaux) : toujours valable', await (async () => { const old64 = 'ab12cd34'.repeat(8); await q("insert into invite_links (list_id, role, token_hash, expires_at, max_uses) values ($1, 'reader', encode(sha256(convert_to($2,'utf8')),'hex'), now() + interval '1 day', 1)", [W, old64]); return (await as('G', () => q('select redeem_invite($1) r', [old64])))[0].r.role === 'reader'; })());
+t('lien court : jamais stocké en clair', (await q('select count(*)::int n from invite_links where token_hash=$1', [shortTok]))[0].n === 0);
+
 // --- suppression en cascade
 await as('A', () => q('delete from lists where id=$1', [L]));
 t('suppression de liste : cadeaux, membres, invitations supprimés', (await q('select 1 from items where list_id=$1', [L])).length + (await q('select 1 from list_members where list_id=$1', [L])).length + (await q('select 1 from invite_links where list_id=$1', [L])).length === 0);
