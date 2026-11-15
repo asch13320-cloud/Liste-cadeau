@@ -537,6 +537,31 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   const fm2 = $(w, '#f'); setv(fm2, 'lnk', 'trop court'); await submit(w, fm2);
   t('« Rejoindre » : texte sans lien → message clair', /bon format/.test($(w, '#ferr').textContent) && !w.__F.st.redeemed);
 
+
+  // 18. listes partagées : rangées par personne, prénoms bien visibles
+  const FOURTH = '44444444-4444-4444-8444-444444444444', FIFTH = '55555555-5555-4555-8555-555555555555';
+  w = await boot({ setup: (F) => {
+    F.st.session = { user: ME };
+    F.db.profiles.push({ id: ME.id, display_name: 'Marie' }, { id: OTHER, display_name: 'Paul' }, { id: THIRD, display_name: 'Léa' }, { id: FOURTH, display_name: 'Paul' }, { id: FIFTH, display_name: '' });
+    const L = (owner, title, extra) => { const id = nid(); F.db.lists.push({ id, owner_id: owner, kind: 'wishes', title, emoji: '🎀', occasion: 'christmas', created_at: '2026-01-0' + (F.db.lists.length % 9 + 1), ...extra }); F.db.list_members.push({ list_id: id, user_id: owner, role: 'owner' }, { list_id: id, user_id: ME.id, role: 'reader' }); return id; };
+    L(OTHER, 'Mes envies'); L(OTHER, "Mes envies d'anniversaire", { occasion: 'birthday', event_date: '2027-03-02' }); L(THIRD, 'Mes envies'); L(THIRD, 'Noël 2026'); L(FOURTH, 'Mes envies'); L(FIFTH, 'Mes envies');
+    const C = nid(); F.db.lists.push({ id: C, owner_id: OTHER, kind: 'gifts_for', title: 'Cadeaux de Mamie', emoji: '🎁', occasion: 'christmas', created_at: '2026-02-01' });
+    F.db.list_members.push({ list_id: C, user_id: OTHER, role: 'owner' }, { list_id: C, user_id: ME.id, role: 'collaborator' }, { list_id: C, user_id: THIRD, role: 'collaborator' });
+  } });
+  await click(w, '[data-id="shared"]');
+  const heads = $$(w, '.who-name').map((e) => e.textContent);
+  t('partagées : une rubrique par personne, prénom en grand', heads.includes('Léa') && heads.includes('Un proche') && heads.some((h) => /^Paul \(1\)$/.test(h)) && heads.some((h) => /^Paul \(2\)$/.test(h)));
+  t('partagées : deux « Paul » différents ne sont plus confondus', heads.filter((h) => /^Paul/.test(h)).length === 2);
+  t('partagées : plus de « Mes envies » en double, titres courts sous chaque prénom', !/Mes envies/.test($(w, '#app').textContent) && $$(w, '.person h4').filter((h) => /Envies$/.test(h.textContent.trim())).length >= 4);
+  t('partagées : « Mes envies d’anniversaire » → « Envies d’anniversaire »', $$(w, '.person h4').some((h) => /Envies d'anniversaire/.test(h.textContent)));
+  t('partagées : un titre qui n’est pas « Mes … » reste tel quel', $$(w, '.person h4').some((h) => /Noël 2026/.test(h.textContent)));
+  t('partagées : rubriques classées par ordre alphabétique', heads.indexOf('Léa') < heads.indexOf('Paul (1)') && heads.indexOf('Paul (1)') < heads.indexOf('Paul (2)') && heads.indexOf('Paul (2)') < heads.indexOf('Un proche'));
+  t('partagées : pas de petit « de Paul » à côté des cartes', !$$(w, '.person .badge').some((b) => /^de /.test(b.textContent)));
+  const cm = $$(w, '.person').find((e) => /Mamie/.test(e.textContent));
+  t('liste à plusieurs créée par un autre : « Créée par Paul · avec Léa » lisible', !!cm && /Créée par/.test(cm.textContent) && /Paul/.test(cm.textContent) && /Léa/.test(cm.textContent));
+  await click(w, $$(w, '.who')[0].nextElementSibling);
+  t('fiche d’une liste partagée : titre complet « Envies de … » et « Partagée par … »', /Envies de /.test($(w, '#app h2').textContent) && /Partagée par /.test($(w, '#app .who-name').textContent));
+
   // 10. déconnexion
   await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);
   t('déconnexion : retour à l’écran de connexion, copie locale effacée', !!$(w, '#authform') && !w.localStorage.getItem('noel2026_v2cache'));
