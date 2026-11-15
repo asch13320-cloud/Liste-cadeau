@@ -189,13 +189,19 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   await click(w, `[data-a="ibuy"][data-id="${g.id}"]`); t('« trouvé » décoché', g.bought === false);
 
   // 5. partage : création d’un lien, révocation
-  w.__F.st.rpc.create_invite_link = async (a) => { const inv = { id: nid(), list_id: a.p_list, role: a.p_role, email: a.p_email, allow_anonymous: a.p_anonymous, expires_at: new Date(Date.now() + 864e5).toISOString(), revoked_at: null, max_uses: a.p_max_uses, uses: 0, created_at: new Date().toISOString() }; w.__F.db.invite_links.push(inv); w.__F.st.lastInvite = a; return { data: { id: inv.id, token: hex64('a'), expires_at: inv.expires_at }, error: null }; };
+  w.__F.st.rpc.create_invite_link = async (a) => { const inv = { id: nid(), list_id: a.p_list, role: a.p_role, email: a.p_email, allow_anonymous: a.p_anonymous, expires_at: new Date(Date.now() + 864e5).toISOString(), revoked_at: null, max_uses: a.p_max_uses, uses: 0, created_at: new Date().toISOString() }; w.__F.db.invite_links.push(inv); w.__F.st.lastInvite = a; return { data: { id: inv.id, token: 'Kd8fQ2xP-zLm9_Tw4VbRyA', expires_at: inv.expires_at }, error: null }; };
   await click(w, '[data-id="mine"]'); await click(w, '.person'); await click(w, '[data-a="lshare"]');
   t('partage : membres listés', /Membres/.test($(w, '#dlg').textContent));
   t('partage : lien sans compte proposé pour une liste d’envies', !!$(w, '#dlg [name="anon"]'));
   const inv = $(w, '#invform'); inv.elements.role.value = 'reader'; await submit(w, inv); await sleep(150);
-  const shown = $(w, '#lnk') && $(w, '#lnk').value;
-  t('partage : lien créé affiché une fois, avec le bon format', shown === 'https://asch13320-cloud.github.io/Liste-cadeau/#join/' + hex64('a'));
+  let copied = ''; Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: async (x) => { copied = x; } }, configurable: true });
+  const URLK = 'https://asch13320-cloud.github.io/Liste-cadeau/#join/Kd8fQ2xP-zLm9_Tw4VbRyA';
+  t('partage : « carte » du lien (titre, rôle, adresse raccourcie), pas une longue adresse brute', !!$(w, '.linkcard') && /Mes envies/.test($(w, '.lc-title').textContent) && /consulter/.test($(w, '.lc-sub').textContent) && /#join\/Kd8fQ2…/.test($(w, '.lc-url').textContent) && !$(w, '#lnk'));
+  await click(w, '#cp');
+  t('partage : « Copier le message » = phrase complète + lien court sensible à la casse', /à consulter « Mes envies »/.test(copied) && copied.endsWith(URLK) && URLK.length < 90);
+  await click(w, '#cpl'); t('partage : « Lien seul » copie uniquement l’adresse', copied === URLK);
+  Object.defineProperty(w.navigator, 'clipboard', { value: { writeText: async () => { throw new Error('refusé'); } }, configurable: true });
+  await click(w, '#cpl'); t('copie refusée par le navigateur : l’adresse est affichée à sélectionner', !!$(w, '#lnk') && $(w, '#lnk').value === URLK);
   t('partage : paramètres transmis (rôle, durée, usages)', w.__F.st.lastInvite.p_role === 'reader' && w.__F.st.lastInvite.p_ttl_hours === 168 && w.__F.st.lastInvite.p_max_uses === 1 && w.__F.st.lastInvite.p_anonymous === false);
   await click(w, '[data-rev]'); await sleep(100);
   t('révocation : lien marqué révoqué', w.__F.db.invite_links[0].revoked_at !== null);
@@ -514,6 +520,22 @@ const seedSession = (F) => { F.st.session = { user: ME }; F.db.profiles.push({ i
   w.__F.st.uploadFail = false; await submit(w, $(w, '#f')); await sleep(250);
   const sac = w.__F.db.items.filter((i) => i.name === 'Sac à dos');
   t('3e appui, photo qui passe : toujours UNE seule envie, avec sa photo, fenêtre fermée', sac.length === 1 && sac[0].photo_paths.length === 1 && !$(w, '#dlg').open && $$(w, 'article.card').filter((c) => /Sac à dos/.test(c.textContent)).length === 1);
+
+
+  // 17. liens courts : adresse collée, code seul, casse respectée
+  const TOK = 'Kd8fQ2xP-zLm9_Tw4VbRyA';
+  const joinSetup = (F) => { seedSession(F); const L = nid(); F.ids = { L }; F.db.lists.push({ id: L, owner_id: OTHER, kind: 'gifts_for', title: 'Cadeaux de Mamie', emoji: '🎁', created_at: '1' }); F.db.list_members.push({ list_id: L, user_id: OTHER, role: 'owner' }); F.st.rpc.redeem_invite = async (a) => { F.st.redeemed = a.p_token; if (a.p_token !== TOK) return { data: null, error: { message: 'invalid_or_expired_invite' } }; F.db.list_members.push({ list_id: L, user_id: ME.id, role: 'collaborator' }); return { data: { list_id: L, role: 'collaborator' }, error: null }; }; };
+  w = await boot({ hash: '#join/' + TOK, setup: joinSetup }); await sleep(700);
+  t('lien court dans l’adresse (#join/…) : liste rejointe, majuscules conservées', /Mamie/.test(txt(w)) && w.__F.st.redeemed === TOK);
+  w = await boot({ setup: joinSetup }); await click(w, '[data-id="shared"]'); await click(w, '[data-a="ljoin"]');
+  const fj = $(w, '#f'); setv(fj, 'lnk', 'Regarde : https://asch13320-cloud.github.io/Liste-cadeau/#join/' + TOK + ' merci !'); await submit(w, fj); await sleep(200);
+  t('« Rejoindre » : adresse collée avec du texte autour', /Mamie/.test(txt(w)) && w.__F.st.redeemed === TOK);
+  w = await boot({ setup: joinSetup }); await click(w, '[data-id="shared"]'); await click(w, '[data-a="ljoin"]');
+  const fk = $(w, '#f'); setv(fk, 'lnk', TOK); await submit(w, fk); await sleep(200);
+  t('« Rejoindre » : le code seul suffit', /Mamie/.test(txt(w)) && w.__F.st.redeemed === TOK);
+  w = await boot({ setup: joinSetup }); await click(w, '[data-id="shared"]'); await click(w, '[data-a="ljoin"]');
+  const fm2 = $(w, '#f'); setv(fm2, 'lnk', 'trop court'); await submit(w, fm2);
+  t('« Rejoindre » : texte sans lien → message clair', /bon format/.test($(w, '#ferr').textContent) && !w.__F.st.redeemed);
 
   // 10. déconnexion
   await click(w, '#me'); await click(w, '[data-a="logout"]'); await sleep(100);

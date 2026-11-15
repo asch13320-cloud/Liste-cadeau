@@ -193,7 +193,7 @@
 
   // ------------------------------------------------------------------ routes par le « # »
   function parseHash() {
-    const m = /^#(join|view)\/([a-f0-9]{64})$/.exec(location.hash || '');
+    const m = /^#(join|view)\/([A-Za-z0-9_-]{20,64})$/.exec(location.hash || '');
     return m ? { type: m[1], token: m[2] } : null;
   }
   const clearHash = () => history.replaceState(null, '', location.pathname + location.search);
@@ -577,13 +577,19 @@
       const role = anon ? 'reader' : fd.get('role');
       try {
         const r = await api.createInvite({ list: lid, role, ttl: +fd.get('ttl'), maxUses: +fd.get('max'), email, anonymous: anon });
-        const url = linkFor(r.token, anon);
-        const mailto = email ? `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Invitation à une liste de cadeaux')}&body=${encodeURIComponent('Voici ton lien : ' + url)}` : '';
-        const html = `<h4>✅ Lien créé</h4><p class="sub">Copie-le maintenant : il ne sera plus affiché ensuite.</p><input class="copybox" readonly value="${esc(url)}" id="lnk" aria-label="Lien">
-          <div class="acts" style="margin-top:6px"><button id="cp" class="on">📋 Copier</button>${navigator.share ? '<button id="shr">📤 Partager</button>' : ''}${mailto ? `<a class="btnlink" href="${esc(mailto)}">✉ Écrire à ${esc(email)}</a>` : ''}</div>`;
+        const url = linkFor(r.token, anon), who = D.me.name ? D.me.name + ' t’invite' : 'Je t’invite';
+        const msg = anon ? `Voici ma liste d’envies « ${l.title} » ${l.emoji} (pas besoin de compte pour la voir) :\n${url}`
+          : role === 'collaborator' ? `${who} à préparer « ${l.title} » ${l.emoji} avec moi :\n${url}` : `${who} à consulter « ${l.title} » ${l.emoji} :\n${url}`;
+        const short = url.replace(/^https?:\/\//, '').replace(/(#(?:join|view)\/.{6}).*$/, '$1…');
+        const mailto = email ? `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Invitation : ' + l.title)}&body=${encodeURIComponent(msg)}` : '';
+        const html = `<h4>✅ Lien prêt à envoyer</h4><p class="sub">Copie-le maintenant : pour ta sécurité, il ne sera plus affiché ensuite.</p>
+          <div class="linkcard"><div class="lc-title">${esc(l.emoji)} ${esc(l.title)}</div><div class="lc-sub">${anon ? 'Liste d’envies à consulter, sans compte' : role === 'collaborator' ? 'Invitation à préparer la liste ensemble' : 'Invitation à consulter la liste'}</div><div class="lc-url">${esc(short)}</div></div>
+          <div class="acts" style="margin-top:8px"><button id="cp" class="on">📋 Copier le message</button><button id="cpl">🔗 Lien seul</button>${navigator.share ? '<button id="shr">📤 Partager</button>' : ''}${mailto ? `<a class="btnlink" href="${esc(mailto)}">✉ Écrire à ${esc(email)}</a>` : ''}</div>`;
         await openShare(lid, html);
-        const cp = $('#cp'); if (cp) { $('#lnk').select(); cp.onclick = async () => { cp.textContent = (await copyText(url)) ? '✓ Copié' : 'Sélectionne et copie le lien'; }; }
-        const sh = $('#shr'); if (sh) sh.onclick = () => navigator.share({ title: 'Invitation', url }).catch(() => {});
+        const showUrl = () => { if (!$('#lnk')) $('#newlink').insertAdjacentHTML('beforeend', `<input class="copybox" readonly id="lnk" value="${esc(url)}" aria-label="Lien" style="margin-top:6px">`); $('#lnk').select(); };
+        const cp = $('#cp'); if (cp) cp.onclick = async () => { if (await copyText(msg)) cp.textContent = '✓ Message copié'; else { cp.textContent = 'Copie auto impossible'; showUrl(); } };
+        const cpl = $('#cpl'); if (cpl) cpl.onclick = async () => { if (await copyText(url)) cpl.textContent = '✓ Lien copié'; else { cpl.textContent = 'Copie auto impossible'; showUrl(); } };
+        const sh = $('#shr'); if (sh) sh.onclick = () => navigator.share({ title: 'Invitation', text: msg.split('\n')[0], url }).catch(() => {});
       } catch (x) { er.textContent = api.friendly(x); }
     };
   }
@@ -593,11 +599,11 @@
       title: 'Rejoindre avec un lien', sub: 'Colle ici le lien (ou le code) que tu as reçu.', submit: 'Rejoindre',
       fields: [{ k: 'lnk', l: 'Lien', r: 1, max: 600, ph: 'https://…#join/…' }],
       onSubmit: async (o) => {
-        const m = /([a-f0-9]{64})/.exec(String(o.lnk).trim().toLowerCase());
-        if (!m) throw new Error('Ce lien n’a pas le bon format.');
-        const isView = /#view\//.test(o.lnk);
-        if (isView) { closeModal(); await openPublic(m[1]); return false; }
-        await joinWith(m[1]);
+        const raw = String(o.lnk).trim();
+        const m = /#(join|view)\/([A-Za-z0-9_-]{20,64})/.exec(raw) || /^()([A-Za-z0-9_-]{20,64})$/.exec(raw);
+        if (!m) throw new Error('Ce lien n’a pas le bon format. Colle l’adresse complète reçue (elle contient #join/…).');
+        if (m[1] === 'view') { closeModal(); await openPublic(m[2]); return false; }
+        await joinWith(m[2]);
       }
     });
   }
