@@ -265,14 +265,45 @@
       <div class="acts">${acts.join('')}</div></article>`;
   }
 
-  function listCard(l) {
+  // Nom du propriétaire d'une liste (avec numéro si deux personnes portent le même prénom)
+  function ownerLabels() {
+    const ids = [...new Set(D.lists.filter((l) => l.owner_id !== D.me.id).map((l) => l.owner_id))], out = {}, count = {};
+    ids.forEach((id) => { const n = (D.names[id] || '').trim() || 'Un proche'; count[n] = (count[n] || 0) + 1; });
+    const seen = {};
+    ids.sort((a, b) => String(D.names[a] || '').localeCompare(String(D.names[b] || ''), 'fr')).forEach((id) => { const n = (D.names[id] || '').trim() || 'Un proche'; seen[n] = (seen[n] || 0) + 1; out[id] = count[n] > 1 ? `${n} (${seen[n]})` : n; });
+    return out;
+  }
+  const ownerName = (l) => (l.owner_id === D.me.id ? 'Moi' : ownerLabels()[l.owner_id] || 'Un proche');
+  // « Mes envies » d'un autre devient « Envies de Paul » ; dans le groupe de Paul, simplement « Envies ».
+  function listTitle(l, short) {
+    if (l.owner_id === D.me.id) return l.title;
+    const m = /^mes\s+(.+)$/i.exec(l.title.trim());
+    if (!m) return l.title;
+    const base = m[1].charAt(0).toUpperCase() + m[1].slice(1);
+    return short ? base : base + ' de ' + ownerName(l);
+  }
+  const initial = (n) => (String(n).trim().charAt(0) || '?').toUpperCase();
+  const coMembers = (l) => (D.members[l.id] || []).filter((m) => m.user_id !== D.me.id).map((m) => nameOf(m.user_id));
+
+  function listCard(l, opt) {
+    opt = opt || {};
     const its = itemsOf(l.id), b = its.filter((i) => i.bought).length, mc = memberCount(l);
     const oc = OCC[l.occasion] || OCC.christmas;
     const badges = [`<span class="badge">${oc[0]} ${oc[1]}${l.event_date ? ' · ' + esc(fdate(l.event_date)) : ''}</span>`, `<span class="badge ${l.role === 'owner' ? 'pine' : l.role === 'collaborator' ? 'red' : 'blue'}">${ROLE[l.role]}</span>`];
     if (l.role !== 'reader' && mc > 1) badges.push(`<span class="badge">👥 ${mc}</span>`);
-    return `<button class="person tap" data-a="lopen" data-id="${l.id}"><div class="top"><h4>${esc(l.emoji)} ${esc(l.title)}</h4><span class="small-label">${its.length} ${plural(its.length, 'idée', 'idées')}</span></div>
+    const mine = l.owner_id === D.me.id;
+    const withLine = !opt.grouped && l.role !== 'reader' && mc > 1 ? `<p class="note" style="margin:4px 0 0">👥 ${mine ? 'Avec' : 'Créée par <b>' + esc(ownerName(l)) + '</b> · avec'} ${esc(coMembers(l).join(', ') || '…')}</p>` : '';
+    return `<button class="person tap" data-a="lopen" data-id="${l.id}"><div class="top"><h4>${esc(l.emoji)} ${esc(listTitle(l, opt.grouped))}</h4><span class="small-label">${its.length} ${plural(its.length, 'idée', 'idées')}</span></div>
       <div class="bar"><i style="width:${l.kind === 'gifts_for' && its.length ? (b / its.length) * 100 : 0}%"></i></div>
-      <span class="small-label">${l.kind === 'wishes' ? 'Liste d’envies' : `${b} ${plural(b, 'trouvé', 'trouvés')} · budget ${has(l.budget) ? eur(l.budget) : 'libre'}`}</span><div style="margin-top:6px">${badges.join('')}${l.role === 'reader' && l.owner_id !== D.me.id && D.names[l.owner_id] ? `<span class="badge">de ${esc(D.names[l.owner_id])}</span>` : ''}</div></button>`;
+      <span class="small-label">${l.kind === 'wishes' ? 'Liste d’envies' : `${b} ${plural(b, 'trouvé', 'trouvés')} · budget ${has(l.budget) ? eur(l.budget) : 'libre'}`}</span>${withLine}<div style="margin-top:6px">${badges.join('')}</div></button>`;
+  }
+
+  // Listes des autres, rangées par personne
+  function groupedByOwner(ls) {
+    const by = {}; ls.forEach((l) => { (by[l.owner_id] = by[l.owner_id] || []).push(l); });
+    const labels = ownerLabels();
+    return Object.keys(by).map((id) => ({ id, name: labels[id] || 'Un proche', lists: by[id].sort((a, c) => String(a.event_date || '9999').localeCompare(String(c.event_date || '9999')) || String(a.created_at).localeCompare(String(c.created_at))) }))
+      .sort((a, c) => a.name.localeCompare(c.name, 'fr')).map((g) => `<div class="who"><span class="av" aria-hidden="true">${esc(initial(g.name))}</span><div><div class="who-name">${esc(g.name)}</div><div class="small-label">${g.lists.length} ${plural(g.lists.length, 'liste partagée', 'listes partagées')}</div></div></div>${g.lists.map((l) => listCard(l, { grouped: true })).join('')}`).join('');
   }
 
   // ------------------------------------------------------------------ vues
@@ -309,7 +340,7 @@
     if (kind === 'mine') {
       const all = D.lists.filter((l) => l.role === 'owner' && !isCollab(l)), mine = all.filter(byOcc);
       return `<div class="section-head"><div><div class="small-label">Mes carnets à moi</div><h2>Mes listes 🎀</h2></div><span class="paper-note">${mine.length} ${plural(mine.length, 'liste', 'listes')}</span></div>
-      <p class="intro">Mes envies, et mes carnets de cadeaux pour les autres : Noël, anniversaire, baby shower…</p>${btn('lnew', 0, '＋ Créer une liste', 'pri')}${occChips(all)}<div style="margin-top:14px">${mine.map(listCard).join('') || '<p class="empty">Crée ta première liste. ✨</p>'}</div>`;
+      <p class="intro">Mes envies, et mes carnets de cadeaux pour les autres : Noël, anniversaire, baby shower…</p>${btn('lnew', 0, '＋ Créer une liste', 'pri')}${occChips(all)}<div style="margin-top:14px">${mine.map((l) => listCard(l)).join('') || '<p class="empty">Crée ta première liste. ✨</p>'}</div>`;
     }
     // Onglet « Partagées » : ce que je prépare avec d'autres + ce que je peux seulement consulter
     const tAll = D.lists.filter(isCollab), rAll = D.lists.filter((l) => l.role === 'reader'), together = tAll.filter(byOcc), readOnly = rAll.filter(byOcc);
@@ -317,9 +348,9 @@
       <p class="intro">Les listes que tu prépares avec quelqu'un, et celles qu'on a partagées avec toi.</p>
       <div class="acts" style="margin-bottom:14px">${btn('lnewc', 0, '＋ Nouvelle liste à plusieurs', 'pri')}${btn('ljoin', 0, '🔗 Rejoindre avec un lien')}</div>${occChips([...tAll, ...rAll])}
       <div class="section-head"><h2>Préparées ensemble</h2><span class="paper-note">On modifie tous</span></div>
-      ${together.map(listCard).join('') || '<p class="empty">Aucune liste à plusieurs pour l’instant.</p>'}
+      ${together.map((l) => listCard(l)).join('') || '<p class="empty">Aucune liste à plusieurs pour l’instant.</p>'}
       <div class="section-head"><h2>À consulter</h2><span class="paper-note">Lecture seule, mise à jour en direct</span></div>
-      ${readOnly.map(listCard).join('') || '<p class="empty">Personne n’a encore partagé de liste avec toi.</p>'}`;
+      ${groupedByOwner(readOnly) || '<p class="empty">Personne n’a encore partagé de liste avec toi.</p>'}`;
   }
 
   function viewDetail() {
@@ -330,7 +361,8 @@
     const sp = spentOf(all), pc = has(l.budget) && +l.budget ? Math.min(100, (sp / l.budget) * 100) : 0;
     const back = l.role === 'reader' || isCollab(l) ? 'shared' : 'mine';
     return `<button class="ghost" data-a="tab" data-id="${back}">← Retour</button>
-    <div class="section-head"><div><div class="small-label">${w ? 'Liste d’envies' : 'Le carnet de'}</div><h2>${esc(l.emoji)} ${esc(l.title)}</h2></div><span class="paper-note">${ROLE[l.role]}</span></div>
+    <div class="section-head"><div><div class="small-label">${w ? 'Liste d’envies' : 'Le carnet de'}</div><h2>${esc(l.emoji)} ${esc(listTitle(l))}</h2></div><span class="paper-note">${ROLE[l.role]}</span></div>
+    ${l.owner_id !== D.me.id ? `<div class="who" style="margin:-4px 0 10px"><span class="av" aria-hidden="true">${esc(initial(ownerName(l)))}</span><div><div class="who-name">Partagée par ${esc(ownerName(l))}</div></div></div>` : ''}
     ${l.role === 'reader' ? '<p class="banner">👀 Lecture seule : tu vois cette liste en direct, mais tu ne peux pas la modifier. Tu peux réserver un cadeau (🎁) et écrire des commentaires (💬) : la personne ne les voit pas.</p>' : ''}
     ${l.kind === 'wishes' && l.role === 'owner' && memberCount(l) > 1 ? '<p class="note">🤫 Les personnes avec qui tu partages peuvent commenter et se répartir les cadeaux : tu ne verras rien, pour garder la surprise.</p>' : ''}
     ${!w ? `<div class="card"><div class="top"><div><div class="small-label">Le budget</div><h4>${all.length} ${plural(all.length, 'idée', 'idées')} à préparer</h4></div><b style="font:700 22px var(--display)">${eur(sp)}</b></div>${has(l.budget) ? `<p class="note">Dépensé sur ${eur(l.budget)} prévus</p>` : ''}<div class="bar"><i style="width:${pc}%"></i></div></div>` : ''}
@@ -699,7 +731,7 @@
   async function pickTargetList(title, filterFn, sub) {
     const ls = D.lists.filter(filterFn);
     if (!ls.length) { toast('Crée d’abord une liste pour pouvoir y ranger ça.'); return null; }
-    return choose(title, ls.map((l) => ({ v: l.id, l: l.emoji + ' ' + l.title })), sub);
+    return choose(title, ls.map((l) => ({ v: l.id, l: l.emoji + ' ' + listTitle(l) })), sub);
   }
   // ------------------------------------------------------------------ commentaires
   function commentsHtml(it, l) {

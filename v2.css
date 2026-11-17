@@ -57,3 +57,8 @@ details.more summary{cursor:pointer;font:700 14px var(--font);padding:2px 0}
 .linkcard .lc-title{font:700 20px var(--display)}
 .linkcard .lc-sub{font:600 13px var(--font);color:var(--muted);margin:2px 0 6px}
 .linkcard .lc-url{font:12px monospace;color:var(--ink);opacity:.75;word-break:break-all}
+
+/* Listes des autres : rangées par personne, prénom bien visible */
+.who{display:flex;align-items:center;gap:12px;margin:22px 0 8px;padding-bottom:6px;border-bottom:2px dashed var(--ink)}
+.who .av{flex:none;width:42px;height:42px;border-radius:50%;background:var(--red);color:#fffaf0;border:2px solid var(--ink);box-shadow:2px 2px 0 var(--ink);display:grid;place-items:center;font:700 22px var(--display)}
+.who .who-name{font:700 23px/1.1 var(--display)}
